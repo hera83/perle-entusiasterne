@@ -93,13 +93,14 @@ export const Workshop: React.FC = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Button className="w-full" variant="outline" disabled>
+              <Button 
+                className="w-full" 
+                variant="outline"
+                onClick={() => setColorDialogOpen(true)}
+              >
                 <Palette className="h-4 w-4 mr-2" />
                 Åben farver
               </Button>
-              <p className="text-xs text-muted-foreground mt-2 text-center">
-                Kommer snart
-              </p>
             </CardContent>
           </Card>
         </div>
