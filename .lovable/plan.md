@@ -1,244 +1,123 @@
 
-# Fix: "Browser Session" tilgang - ignorer Supabase's interne SIGNED_OUT
+# Popup-layout forbedringer
 
-## Problemet (nu med fuld forstaelse)
+Tre ændringer til perleopskrift-popuppen (PatternDialog):
 
-Alle tidligere fixes har proevet at forhindre token-refresh stormen. Men den EGENTLIGE fejl er at appen REAGERER paa `SIGNED_OUT` events fra Supabase-klienten. Disse events fyres af mange interne grunde (failed refresh, rate limit, token reuse detection), og hver gang de fyrer, rydder vi brugerens state og redirecter til forsiden.
+## 1. Kompakt header
 
-## Den nye tilgang: Ignorer SIGNED_OUT helt
+Headeren reduceres til en kompakt linje med mindre padding. Knapper og titel placeres tæt sammen uden ekstra luft over/under.
 
-I stedet for at kaempe med Supabase-klientens interne mekanismer, goer vi appen immun over for dem:
+- Ændrer `p-4 pb-2` til `px-4 py-2` på DialogHeader
+- Reducerer knapperne fra `size="lg"` og `h-12` til `size="sm"` og `h-9`
+- Reducerer title-tekst fra `text-xl` til `text-base`
 
-1. **SIGNED_OUT fra onAuthStateChange: IGNORER** - ryd ALDRIG brugerstate baseret paa denne event
-2. **"Log ud" knappen: Den ENESTE maade at logge ud** - `signOut()` funktionen rydder state direkte
-3. **Operationsfejl (401): Haandter graciost** - hvis en gem/query fejler med auth-fejl, redirect til login
-4. **Behold manual refresh timer** - holder tokenet gyldigt i baggrunden
+## 2. Dynamisk perlepladevisning
 
-## Hvorfor dette virker
+BeadPlateView ændres fra en fast `beadSize` beregning til at fylde den tilgængelige plads dynamisk:
 
-```text
-FOER (saarbar):
-  Supabase intern refresh fejler -> SIGNED_OUT event -> user = null -> redirect til "/"
-  Bruger mister alt arbejde!
+- Wrapperen ændres til at bruge `min-h-0` og `flex-1` så den fylder alt tilgængeligt plads i body-området
+- BeadPlateView-komponenten ændres så den modtager en container-ref og beregner `beadSize` ud fra containerens faktiske bredde/højde divideret med `dimension`, i stedet for den faste `Math.floor(600 / dimension)` beregning
+- Bruger `ResizeObserver` eller simpel beregning baseret på container-størrelsen
 
-EFTER (robust):
-  Supabase intern refresh fejler -> SIGNED_OUT event -> IGNORERET
-  Bruger forbliver "logget ind" i UI
-  Naeste operation fejler med 401 -> "Din session er udloebet, log ind igen"
-  Bruger ser en tydelig fejlbesked, mister ikke arbejde
-```
+## 3. Thumbnail-billede i sidebar
 
-## Filer der aendres
+Det samme preview-billede som vises i galleriet indsættes i sidebaren, mellem "Marker plade som færdig" og "Print plade":
 
-| Fil | Aendring |
-|-----|----------|
-| `src/contexts/AuthContext.tsx` | Ignorer SIGNED_OUT events, signOut() rydder direkte |
-| `src/components/workshop/PatternEditor.tsx` | Tilfoej auth-fejl haandtering der redirecter |
-| `src/components/gallery/PatternDialog.tsx` | Tilfoej auth-fejl haandtering |
-| `src/pages/Administration.tsx` | Tilfoej session-recovery ved mount |
+- Udvider `Pattern`-interfacet i PatternDialog med `thumbnail?: string | null`
+- Tilføjer `PatternPreview`-komponenten i sidebaren med en ramme rundt
+- Opdaterer Favorites.tsx til også at hente `thumbnail` fra databasen, så det virker begge steder
+
+---
 
 ## Tekniske detaljer
 
-### AuthContext.tsx - Kerneaendringen
+### PatternDialog.tsx
 
+**Pattern interface** - tilføj `thumbnail`:
 ```text
-// onAuthStateChange handler:
-supabase.auth.onAuthStateChange((event, session) => {
-  if (!isMounted) return;
-
-  // TOKEN_REFRESHED: opdater session ref, ingen re-render
-  if (event === 'TOKEN_REFRESHED') {
-    if (session) {
-      sessionRef.current = session;
-      scheduleRefresh(session);
-    }
-    return;
-  }
-
-  // INITIAL_SESSION: haandteres af initializeAuth
-  if (event === 'INITIAL_SESSION') return;
-
-  // SIGNED_OUT: IGNORER FULDSTAENDIGT
-  // Vi rydder KUN brugerstate via den eksplicitte signOut() funktion
-  // Dette goer appen immun over for Supabase-klientens interne SIGNED_OUT events
-  if (event === 'SIGNED_OUT') {
-    return; // <-- DET ER HELE AENDRINGEN
-  }
-
-  // SIGNED_IN: opdater state som foer
-  if (event === 'SIGNED_IN' && session?.user) {
-    wasLoggedInRef.current = true;
-    if (currentUserIdRef.current !== session.user.id) {
-      currentUserIdRef.current = session.user.id;
-      sessionRef.current = session;
-      setUser(session.user);
-      scheduleRefresh(session);
-      checkAdminRole(session.user.id).then(result => {
-        if (isMounted) setIsAdmin(result);
-      });
-    } else {
-      sessionRef.current = session;
-      scheduleRefresh(session);
-    }
-  }
-});
-```
-
-### AuthContext.tsx - signOut() rydder state direkte
-
-```text
-const signOut = useCallback(async () => {
-  // Ryd ALLE auth-relaterede state FOER vi kalder Supabase
-  currentUserIdRef.current = null;
-  sessionRef.current = null;
-  wasLoggedInRef.current = false;
-  setUser(null);
-  setIsAdmin(false);
-
-  // Ryd refresh timer
-  if (refreshTimerRef.current) {
-    clearTimeout(refreshTimerRef.current);
-    refreshTimerRef.current = null;
-  }
-
-  // Kald Supabase signOut (vi har allerede ryddet vores state,
-  // saa SIGNED_OUT eventet er irrelevant)
-  try {
-    await supabase.auth.signOut();
-  } catch (err) {
-    // Ignorer fejl - vi har allerede ryddet state
-    console.error('Error during signOut:', err);
-  }
-}, []);
-```
-
-### AuthContext.tsx - Ny verifySession funktion
-
-Tilfoej en funktion som komponenter kan bruge til at verificere sessionen foer kritiske operationer:
-
-```text
-const verifySession = useCallback(async (): Promise<boolean> => {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session) return true;
-
-  // Session er virkelig vaek - ryd state og redirect
-  currentUserIdRef.current = null;
-  sessionRef.current = null;
-  setUser(null);
-  setIsAdmin(false);
-  if (refreshTimerRef.current) {
-    clearTimeout(refreshTimerRef.current);
-    refreshTimerRef.current = null;
-  }
-  return false;
-}, []);
-```
-
-Tilfoej `verifySession` til AuthContextType interfacet og context value.
-
-### PatternEditor.tsx - Auth-fejl haandtering
-
-I `handleSaveAll`, naar en save fejler med auth-fejl, kald `verifySession`:
-
-```text
-const { user, verifySession } = useAuth();
-
-// I handleSaveAll catch block:
-catch (error) {
-  const isAuthError = error instanceof Error &&
-    (error.message === 'SESSION_EXPIRED' ||
-     error.message?.includes('JWT') ||
-     error.message?.includes('401'));
-
-  if (isAuthError) {
-    const isValid = await verifySession();
-    if (!isValid) {
-      toast({
-        title: 'Session udloebet',
-        description: 'Du er blevet logget ud. Log ind igen for at gemme.',
-        variant: 'destructive',
-      });
-      navigate('/login');
-      return;
-    }
-  }
-
-  toast({
-    title: 'Fejl',
-    description: 'Kunne ikke gemme aendringer.',
-    variant: 'destructive',
-  });
+interface Pattern {
+  id: string;
+  title: string;
+  category_name: string | null;
+  plate_width: number;
+  plate_height: number;
+  plate_dimension: number;
+  thumbnail?: string | null;  // NY
 }
 ```
 
-### PatternDialog.tsx - Auth-fejl haandtering
-
-Samme moenster: fang auth-fejl og kald `verifySession`:
-
+**Header** - mere kompakt:
 ```text
-const saveProgress = async (completed: string[], position: PlatePosition) => {
-  if (!pattern) return { error: null };
-
-  if (user) {
-    const { error } = await supabase
-      .from('user_progress')
-      .upsert({ ... });
-
-    if (error) {
-      // Tjek om det er en auth-fejl
-      if (error.message?.includes('JWT') || error.code === 'PGRST301') {
-        console.error('Auth error saving progress, session may be expired');
-      }
-      return { error };
-    }
-  }
-  // ...
-};
+<DialogHeader className="px-4 py-2 border-b no-print">
+  <div className="flex items-center justify-between">
+    <DialogTitle className="text-base">
+      ...
+    </DialogTitle>
+    <div className="flex items-center gap-1">
+      <Button variant="outline" size="sm" ... className="h-9 px-3">
+      ...
+    </div>
+  </div>
+</DialogHeader>
 ```
 
-### Administration.tsx - Fjern aggressiv redirect
-
-I stedet for at redirecte naar `!user || !isAdmin`, tilfoej et ekstra tjek:
-
+**Body** - dynamisk perlepladevisning:
 ```text
-// FOER: Redirect oejeblikkeligt naar user er null
-if (!user || !isAdmin) {
-  return <Navigate to="/" replace />;
-}
-
-// EFTER: Vis loading mens vi tjekker, redirect kun naar vi er sikre
-if (!user && !loading) {
-  return <Navigate to="/login" replace />;
-}
-if (user && !isAdmin && !loading) {
-  return <Navigate to="/" replace />;
-}
+<div className="flex-1 overflow-hidden p-4 grid grid-cols-1 md:grid-cols-[1fr_250px] gap-4 min-h-0">
+  <div className="flex-1 overflow-auto flex items-center justify-center min-h-0">
+    <BeadPlateView ... />
+  </div>
+  ...
+</div>
 ```
 
-## Oversigt over aendringer
+**Sidebar** - tilføj thumbnail mellem checkbox og print-knap:
+```text
+{/* Marker plade som færdig */}
+<div className="flex items-center gap-3 p-4 bg-muted rounded-lg">
+  ...
+</div>
 
-### AuthContext.tsx (hoveddaendring):
-- SIGNED_OUT handler: aendret fra "ryd alt" til "ignorer"
-- signOut(): rydder state DIREKTE (ikke via event)
-- Ny verifySession() funktion eksponeret via context
-- Behold alt andet (autoRefreshToken=false, scheduleRefresh, cleanupAutoRefresh)
+{/* Thumbnail preview - NY */}
+{pattern.thumbnail && (
+  <div className="rounded-lg overflow-hidden border bg-muted">
+    <PatternPreview thumbnail={pattern.thumbnail} />
+  </div>
+)}
 
-### PatternEditor.tsx:
-- Import verifySession fra useAuth
-- I catch-block: kald verifySession ved auth-fejl, redirect til login
+{/* Print plade */}
+<Button onClick={handlePrint} ...>
+```
 
-### PatternDialog.tsx:
-- Tilfoej auth-fejl logging (ikke redirect - det er en dialog)
+### BeadPlateView.tsx
 
-### Administration.tsx:
-- Adskil "ingen bruger" og "ikke admin" checks
-- Redirect til /login (ikke /) naar ingen bruger
+Ændrer `beadSize`-beregningen til at bruge en container-ref:
 
-## Forventet resultat
+```text
+// Tilføj containerSize prop (optional)
+interface BeadPlateViewProps {
+  beads: Bead[];
+  colors: Map<string, ColorInfo>;
+  dimension: number;
+  containerSize?: { width: number; height: number };
+}
 
-- Supabase-klientens interne SIGNED_OUT events pavirker IKKE brugerens oplevelse
-- "Log ud" knappen virker stadig normalt
-- Hvis tokenet udloeber og refresh fejler, faar brugeren en tydelig fejlbesked naar de proever at gemme
-- Administration-siden forbliver stabil ved navigation
-- Docker + preview kan bruges samtidig uden at pavirke hinanden
-- Ingen flere "Du er blevet logget ud" beskeder medmindre brugeren selv logger ud
+// Beregn beadSize dynamisk
+const beadSize = containerSize
+  ? Math.max(16, Math.floor(Math.min(containerSize.width, containerSize.height) / (dimension + 1)))
+  : Math.max(20, Math.min(32, Math.floor(600 / dimension)));
+```
+
+I PatternDialog bruges `useRef` + `ResizeObserver` til at maale containeren og sende størrelsen videre.
+
+### Favorites.tsx
+
+Tilføj `thumbnail` til Pattern-interfacet og til Supabase-queryen, så thumbnail er tilgængelig når man åbner popuppen fra favoritsiden.
+
+## Filer der ændres
+
+| Fil | Ændring |
+|-----|---------|
+| `src/components/gallery/PatternDialog.tsx` | Kompakt header, dynamisk beadplate, thumbnail i sidebar |
+| `src/components/gallery/BeadPlateView.tsx` | Dynamisk beadSize baseret på container-størrelse |
+| `src/pages/Favorites.tsx` | Tilføj `thumbnail` til query og interface |
