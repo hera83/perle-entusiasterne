@@ -1,64 +1,96 @@
 
-# Plan: Ret Login og Opret Opskrift Fejl
+# Plan: Ret PlateEditorDialog Layout og Galleri Visning
 
-## Identificerede Problemer
-
-### Problem 1: Login viser "Opret administrator" selvom brugere eksisterer
-**Årsag:** Login-siden tjekker `profiles`-tabellen for at se om der er brugere. Men RLS-politikken på `profiles` tillader kun at se din egen profil (`auth.uid() = user_id`). Når du ikke er logget ind, er `auth.uid()` tom, så queryen returnerer 0 rækker.
-
-**Løsning:** Brug `auth.users`-tabellen via en database-funktion i stedet, da denne kræver service-role. Alternativt: lav en simpel RPC-funktion der returnerer om der findes brugere.
-
-### Problem 2: Oprette opskrift fejler
-**Årsag:** `categories`-tabellen har INSERT-politik der kun tillader admins at oprette kategorier. Men `CreatePatternDialog` prøver at oprette nye kategorier for alle brugere.
-
-**Løsning:** Enten tillad alle autentificerede brugere at oprette kategorier, eller håndter det i koden så kun eksisterende kategorier kan vælges af ikke-admins.
+## Overblik
+Retter tre problemer: 1) Responsiv toolbar i plade-editor, 2) Bedre header layout med knapper på række, 3) Galleri viser nu også private mønstre til ejeren og alt til admins.
 
 ---
 
-## Ændringer
+## Problem 1: Responsiv Toolbar
 
-### 1. Database: Opret funktion til at tjekke om brugere eksisterer
-Opretter en simpel database-funktion der returnerer om der findes profiler i systemet - denne kører med `SECURITY DEFINER` så den omgår RLS.
+### Nuværende situation
+- Toolbar har fast bredde på `w-64` (256px)
+- Når skærmen er for lille, bliver griddet klemt
+- Toolbaren har fuld tekst på alle knapper
 
-```sql
-CREATE OR REPLACE FUNCTION public.has_any_users()
-RETURNS boolean
-LANGUAGE sql
-SECURITY DEFINER
-AS $$
-  SELECT EXISTS (SELECT 1 FROM public.profiles);
-$$;
+### Løsning: Kompakt mode for toolbar
+Tilføj en `compact` prop til `EditorToolbar` der aktiveres på mindre skærme:
+
+**I PlateEditorDialog:**
+- Brug `useIsMobile()` hook til at detektere skærmstørrelse
+- Ved kompakt mode: toolbar vises med ikoner i stedet for tekst
+- Toolbar bredde reduceres fra `w-64` til `w-14` i kompakt mode
+
+**I EditorToolbar:**
+- Ny `compact` prop styrer visningen
+- I kompakt mode:
+  - Farvevælger bliver en dropdown med kun farve-cirkler
+  - Pipette, Fasthold osv. bliver ikon-knapper med tooltip
+  - Erstat-sektion kollapser til en knap der åbner en popover
+  - Ryd plade forbliver ikon-knap
+
+### Layout-forbedring
+- Ændrer dialogen til at bruge `flex-col` på små skærme
+- Toolbar flyttes under griddet på mobil i stedet for ved siden af
+- Sikrer at griddet altid vises i fuld størrelse
+
+---
+
+## Problem 2: Header med Gem og Luk knapper på række
+
+### Nuværende situation
+```tsx
+<DialogTitle className="flex items-center justify-between">
+  <span>Række X, Plade Y</span>
+  <Button>Gem</Button>  // X-knappen er shadcn default, placeret i hjørnet
+</DialogTitle>
 ```
 
-### 2. Login.tsx: Brug den nye funktion
-Ændrer `checkForUsers` til at kalde RPC-funktionen i stedet for at query `profiles` direkte.
+### Løsning
+- Fjern den automatiske X-knap fra Dialog
+- Tilføj eksplicit "Luk" knap ved siden af "Gem"
+- Begge knapper i samme række med tydelig afstand
 
-```typescript
-// Før
-const { count, error } = await supabase
-  .from('profiles')
-  .select('*', { count: 'exact', head: true });
+**Nyt layout:**
+```
+[Række 1, Plade 1]                    [Luk] [Gem]
+```
 
-// Efter
-const { data, error } = await supabase.rpc('has_any_users');
-if (!error && data === false) {
-  setShowFirstAdmin(true);
+---
+
+## Problem 3: Galleri viser også private mønstre til ejeren
+
+### Nuværende situation
+```tsx
+.eq('is_public', true)  // Kun offentlige mønstre vises
+```
+
+### Løsning
+Opdater Gallery.tsx til at hente mønstre baseret på brugerens status:
+
+**Logik:**
+1. Hent altid offentlige mønstre
+2. Hvis bruger er logget ind: hent også brugerens egne private mønstre
+3. Hvis bruger er admin: hent alle mønstre (offentlige + private)
+
+**SQL-strategi med OR-betingelser:**
+```tsx
+// Eksempel på logik (pseudokode)
+if (isAdmin) {
+  // Ingen filter på is_public
+} else if (user) {
+  // is_public = true ELLER user_id = current_user
+  request = request.or(`is_public.eq.true,user_id.eq.${user.id}`);
+} else {
+  // Kun offentlige
+  request = request.eq('is_public', true);
 }
 ```
 
-### 3. Database: Opdater categories INSERT-politik
-Tillader alle autentificerede brugere at oprette kategorier (ikke kun admins). Dette giver mening da kategorier er en fælles ressource.
-
-```sql
--- Drop eksisterende politik
-DROP POLICY IF EXISTS "Admins can insert categories" ON public.categories;
-
--- Opret ny politik
-CREATE POLICY "Authenticated users can insert categories"
-  ON public.categories FOR INSERT
-  TO authenticated
-  WITH CHECK (true);
-```
+**PatternCard opdatering:**
+- Tilføj `is_public` til Pattern interface (allerede der)
+- Vis et "Privat" badge på kort der ikke er offentlige
+- Brug lås-ikon eller anden visuel indikator
 
 ---
 
@@ -66,28 +98,75 @@ CREATE POLICY "Authenticated users can insert categories"
 
 | Fil | Ændring |
 |-----|---------|
-| Database migration | Opret `has_any_users()` funktion |
-| Database migration | Opdater INSERT-politik på `categories` |
-| `src/pages/Login.tsx` | Brug `supabase.rpc('has_any_users')` i stedet for direkte query |
+| `src/components/workshop/PlateEditorDialog.tsx` | Responsiv layout, eksplicit luk-knap |
+| `src/components/workshop/EditorToolbar.tsx` | Tilføj `compact` prop og kompakt visning |
+| `src/pages/Gallery.tsx` | Opdater fetch til at inkludere private mønstre |
+| `src/components/gallery/PatternCard.tsx` | Vis "Privat" badge |
 
 ---
 
 ## Tekniske detaljer
 
-### has_any_users() funktion
-- Returnerer `true` hvis der er mindst én profil
-- Bruger `SECURITY DEFINER` så den kører med creator's rettigheder (omgår RLS)
-- Simpel og hurtig query
+### EditorToolbar compact mode
+- Bruger Tooltip på alle ikon-knapper
+- Farvevælger: viser kun cirkel i trigger, dropdown har fuld info
+- Erstat-sektion: Popover med samme indhold som nu
+- Bredde: `w-14` i compact, `w-64` i normal
 
-### Categories politik
-- Ændres fra "kun admins" til "alle autentificerede"
-- UPDATE og DELETE forbliver admin-only
-- SELECT er allerede åben for alle
+### Dialog responsivt layout
+```tsx
+// Detect compact mode
+const isMobile = useIsMobile();
+const isCompact = isMobile || windowWidth < 900;
+
+// Layout
+<div className={`flex ${isCompact ? 'flex-col' : 'flex-row'} gap-4`}>
+  {/* Grid first, always full size */}
+  <div className="flex-shrink-0">
+    <InteractiveBeadGrid ... />
+  </div>
+  {/* Toolbar adapts */}
+  <EditorToolbar compact={isCompact} ... />
+</div>
+```
+
+### Galleri query med Supabase OR
+```tsx
+const { user, isAdmin } = useAuth();
+
+let request = supabase.from('bead_patterns').select(...);
+
+if (isAdmin) {
+  // Hent alle - ingen filter
+} else if (user) {
+  request = request.or(`is_public.eq.true,user_id.eq.${user.id}`);
+} else {
+  request = request.eq('is_public', true);
+}
+```
 
 ---
 
-## Efter ændringerne
+## Visuelt resultat
 
-1. **Login-siden** vil korrekt vise login-formularen når der allerede er brugere
-2. **Opret opskrift** vil virke fordi brugere nu kan oprette kategorier
-3. Eksisterende funktionalitet påvirkes ikke
+### PlateEditorDialog - Kompakt mode
+```
++------------------------------------------+
+| Række 1, Plade 1          [Luk] [💾 Gem] |
++------------------------------------------+
+|                                          |
+|     [29x29 Perleplade Grid]              |
+|                                          |
++------------------------------------------+
+| [🎨] [💧] [✏️] [🔄] [🗑️]                |
++------------------------------------------+
+```
+
+### PatternCard med Privat badge
+```
++----------------------------+
+| Min opskrift       [🔒]  ♥ |
+| [Kategori] [Privat]        |
+| ...                        |
++----------------------------+
+```
