@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ChevronLeft, ChevronRight, X, Printer } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Printer } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { BeadPlateView } from './BeadPlateView';
@@ -26,6 +26,7 @@ interface PatternDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   pattern: Pattern | null;
+  onProgressChange?: () => void;
 }
 
 interface PlatePosition {
@@ -37,26 +38,39 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
   open,
   onOpenChange,
   pattern,
+  onProgressChange,
 }) => {
   const { user } = useAuth();
   const [currentPosition, setCurrentPosition] = useState<PlatePosition>({ row: 1, plate: 1 });
   const [completedPlates, setCompletedPlates] = useState<string[]>([]);
   const [plateData, setPlateData] = useState<any>(null);
   const [colors, setColors] = useState<Map<string, { hex_color: string; name: string; code: string }>>(new Map());
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
 
   const totalPlates = pattern ? pattern.plate_width * pattern.plate_height : 0;
   const currentPlateKey = `${currentPosition.row}-${currentPosition.plate}`;
 
+  // Load progress and colors on open, then navigate to first incomplete plate
   useEffect(() => {
     if (open && pattern) {
-      loadProgress();
+      setInitialLoadDone(false);
+      loadProgressAndNavigate();
       loadColors();
+    }
+  }, [open, pattern]);
+
+  // Load plate data when position changes
+  useEffect(() => {
+    if (open && pattern && initialLoadDone) {
       loadPlateData();
     }
-  }, [open, pattern, currentPosition]);
+  }, [currentPosition, initialLoadDone]);
 
-  const loadProgress = async () => {
+  const loadProgressAndNavigate = async () => {
     if (!pattern) return;
+
+    let completed: string[] = [];
+    let savedPosition: PlatePosition | null = null;
 
     if (user) {
       const { data } = await supabase
@@ -67,19 +81,45 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
         .maybeSingle();
 
       if (data) {
-        setCompletedPlates(data.completed_plates as string[] || []);
-        setCurrentPosition({ row: data.current_row, plate: data.current_plate });
+        completed = (data.completed_plates as string[]) || [];
+        savedPosition = { row: data.current_row || 1, plate: data.current_plate || 1 };
       }
     } else {
       const local = localStorage.getItem(`progress_${pattern.id}`);
       if (local) {
         const parsed = JSON.parse(local);
-        setCompletedPlates(parsed.completed || []);
+        completed = parsed.completed || [];
         if (parsed.position) {
-          setCurrentPosition(parsed.position);
+          savedPosition = parsed.position;
         }
       }
     }
+
+    setCompletedPlates(completed);
+
+    // Find first incomplete plate to auto-navigate
+    const firstIncomplete = findFirstIncompletePlate(completed, pattern);
+    if (firstIncomplete) {
+      setCurrentPosition(firstIncomplete);
+    } else if (savedPosition) {
+      setCurrentPosition(savedPosition);
+    } else {
+      setCurrentPosition({ row: 1, plate: 1 });
+    }
+
+    setInitialLoadDone(true);
+  };
+
+  const findFirstIncompletePlate = (completed: string[], pat: Pattern): PlatePosition | null => {
+    for (let row = 1; row <= pat.plate_height; row++) {
+      for (let plate = 1; plate <= pat.plate_width; plate++) {
+        const key = `${row}-${plate}`;
+        if (!completed.includes(key)) {
+          return { row, plate };
+        }
+      }
+    }
+    return null; // All complete
   };
 
   const loadColors = async () => {
@@ -108,7 +148,7 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
   };
 
   const saveProgress = async (completed: string[], position: PlatePosition) => {
-    if (!pattern) return;
+    if (!pattern) return { error: null };
 
     if (user) {
       const { error } = await supabase
@@ -126,6 +166,7 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
 
       if (error) {
         console.error('Error saving progress:', error);
+        return { error };
       }
     } else {
       localStorage.setItem(`progress_${pattern.id}`, JSON.stringify({
@@ -133,22 +174,29 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
         position,
       }));
     }
+
+    onProgressChange?.();
+    return { error: null };
   };
 
   const togglePlateComplete = async () => {
     const key = currentPlateKey;
     const isCompleted = completedPlates.includes(key);
-    
-    let newCompleted: string[];
-    if (isCompleted) {
-      newCompleted = completedPlates.filter(k => k !== key);
-    } else {
-      newCompleted = [...completedPlates, key];
-    }
+
+    const newCompleted = isCompleted
+      ? completedPlates.filter(k => k !== key)
+      : [...completedPlates, key];
 
     setCompletedPlates(newCompleted);
-    await saveProgress(newCompleted, currentPosition);
-    toast.success(isCompleted ? 'Markering fjernet' : 'Plade markeret som færdig');
+    const result = await saveProgress(newCompleted, currentPosition);
+
+    if (result.error) {
+      toast.error('Kunne ikke gemme progress');
+      // Rollback
+      setCompletedPlates(completedPlates);
+    } else {
+      toast.success(isCompleted ? 'Markering fjernet' : 'Plade markeret som færdig');
+    }
   };
 
   const navigate = (direction: 'prev' | 'next') => {
@@ -189,7 +237,7 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full p-0 overflow-hidden">
+      <DialogContent hideCloseButton className="max-w-[95vw] max-h-[95vh] w-full h-full p-0 overflow-hidden">
         <DialogHeader className="p-4 pb-2 border-b no-print">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-xl">
@@ -223,6 +271,14 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
               >
                 <span className="hidden sm:inline mr-1">Frem</span>
                 <ChevronRight className="h-6 w-6" />
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={() => onOpenChange(false)}
+                className="h-12 px-4"
+              >
+                Luk
               </Button>
             </div>
           </div>

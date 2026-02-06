@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Layout } from '@/components/layout/Layout';
 import { SearchBar } from '@/components/gallery/SearchBar';
 import { PatternCard } from '@/components/gallery/PatternCard';
@@ -33,7 +33,7 @@ export const Gallery: React.FC = () => {
   const [selectedPattern, setSelectedPattern] = useState<Pattern | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const fetchPatterns = async (query?: string, categoryId?: string | null) => {
+  const fetchPatterns = useCallback(async (query?: string, categoryId?: string | null) => {
     setLoading(true);
     try {
       let request = supabase
@@ -54,14 +54,11 @@ export const Gallery: React.FC = () => {
         `)
         .order('created_at', { ascending: false });
 
-      // Apply visibility filter based on user status
       if (isAdmin) {
-        // Admins see everything - no filter
+        // Admins see everything
       } else if (user) {
-        // Logged in users see public + their own private patterns
         request = request.or(`is_public.eq.true,user_id.eq.${user.id}`);
       } else {
-        // Guests see only public patterns
         request = request.eq('is_public', true);
       }
 
@@ -73,7 +70,8 @@ export const Gallery: React.FC = () => {
         request = request.eq('category_id', categoryId);
       }
 
-      const { data, error } = await request.limit(hasSearched ? 50 : 6);
+      const isSearching = !!(query || categoryId);
+      const { data, error } = await request.limit(isSearching ? 50 : 3);
 
       if (error) {
         console.error('Error fetching patterns:', error);
@@ -101,28 +99,32 @@ export const Gallery: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, isAdmin]);
 
   useEffect(() => {
     fetchPatterns();
-  }, [user, isAdmin]);
+  }, [fetchPatterns]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
-    setHasSearched(true);
+    if (query) {
+      setHasSearched(true);
+    }
     fetchPatterns(query, selectedCategory);
   };
 
   const handleCategoryChange = (categoryId: string | null) => {
     setSelectedCategory(categoryId);
-    if (hasSearched || categoryId) {
-      fetchPatterns(searchQuery, categoryId);
-    }
+    fetchPatterns(searchQuery, categoryId);
   };
 
   const handleOpenPattern = (pattern: Pattern) => {
     setSelectedPattern(pattern);
     setDialogOpen(true);
+  };
+
+  const handleRefresh = () => {
+    fetchPatterns(searchQuery, selectedCategory);
   };
 
   return (
@@ -184,6 +186,7 @@ export const Gallery: React.FC = () => {
                 key={pattern.id}
                 pattern={pattern}
                 onOpen={() => handleOpenPattern(pattern)}
+                onDelete={handleRefresh}
               />
             ))}
           </div>
@@ -194,6 +197,7 @@ export const Gallery: React.FC = () => {
           open={dialogOpen}
           onOpenChange={setDialogOpen}
           pattern={selectedPattern}
+          onProgressChange={handleRefresh}
         />
       </div>
     </Layout>

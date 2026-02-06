@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Search, X } from 'lucide-react';
 
 interface SearchBarProps {
@@ -11,46 +10,42 @@ interface SearchBarProps {
 export const SearchBar: React.FC<SearchBarProps> = ({ onSearch, initialValue = '' }) => {
   const [query, setQuery] = useState(initialValue);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSearch(query);
-  };
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onSearch(query);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   const handleClear = () => {
     setQuery('');
-    onSearch('');
   };
 
   return (
-    <form onSubmit={handleSubmit} className="w-full">
-      <div className="relative flex gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder="Søg efter perleplade-opskrifter... (f.eks. 'Ariel', 'Mickey Mouse')"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-10 pr-10 h-12 text-base"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={handleClear}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              title="Ryd søgning"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-        <Button type="submit" size="lg" className="h-12 px-6">
-          Søg
-        </Button>
+    <div className="w-full">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+        <Input
+          type="text"
+          placeholder="Søg efter perleplade-opskrifter... (f.eks. 'Ariel', 'Mickey Mouse')"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="pl-10 pr-10 h-12 text-base"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={handleClear}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            title="Ryd søgning"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
       <p className="mt-2 text-sm text-muted-foreground text-center">
-        Tip: Du kan søge på titlen af opskriften
+        Tip: Søgning starter automatisk mens du skriver
       </p>
-    </form>
+    </div>
   );
 };

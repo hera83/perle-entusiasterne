@@ -3,7 +3,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Heart, Eye, RotateCcw, Pencil, Trash2, Calendar, User, Grid3X3, Hash, Lock } from 'lucide-react';
+import { Heart, Eye, RotateCcw, Pencil, Trash2, Calendar, User, Grid3X3, Hash, Lock, Globe } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
@@ -57,7 +57,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
 
   useEffect(() => {
     checkFavorite();
-    calculateProgress();
+    refreshProgress();
   }, [pattern.id, user]);
 
   const checkFavorite = async () => {
@@ -75,7 +75,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
     }
   };
 
-  const calculateProgress = async () => {
+  const refreshProgress = async () => {
     const total = pattern.plate_width * pattern.plate_height;
     setTotalPlates(total);
 
@@ -93,11 +93,21 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
           : 0;
         setCompletedPlates(completed);
         setProgress((completed / total) * 100);
+      } else {
+        setCompletedPlates(0);
+        setProgress(0);
       }
     } else {
-      const localProgress = JSON.parse(localStorage.getItem(`progress_${pattern.id}`) || '[]');
-      setCompletedPlates(localProgress.length);
-      setProgress((localProgress.length / total) * 100);
+      const local = localStorage.getItem(`progress_${pattern.id}`);
+      if (local) {
+        const parsed = JSON.parse(local);
+        const completed = parsed.completed?.length || 0;
+        setCompletedPlates(completed);
+        setProgress((completed / total) * 100);
+      } else {
+        setCompletedPlates(0);
+        setProgress(0);
+      }
     }
   };
 
@@ -176,11 +186,6 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
                   {pattern.category_name}
                 </Badge>
               )}
-              {pattern.is_public === false && (
-                <Badge variant="outline" className="text-muted-foreground">
-                  Privat
-                </Badge>
-              )}
             </div>
           </div>
           <Button
@@ -204,6 +209,20 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
 
           {/* Metadata */}
           <div className="space-y-2 text-sm">
+            {/* Privat/Offentlig status */}
+            <div className="flex items-center gap-2 text-muted-foreground">
+              {pattern.is_public === false ? (
+                <>
+                  <Lock className="h-4 w-4 flex-shrink-0" />
+                  <span>Privat</span>
+                </>
+              ) : (
+                <>
+                  <Globe className="h-4 w-4 flex-shrink-0" />
+                  <span>Offentlig</span>
+                </>
+              )}
+            </div>
             <div className="flex items-center gap-2 text-muted-foreground">
               <Calendar className="h-4 w-4 flex-shrink-0" />
               <span className="truncate">
