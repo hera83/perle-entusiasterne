@@ -1,250 +1,229 @@
 
 
-# Fix: Token-storm og session-tab ved gemning
+# Fix: Session-tab ved gemning - den RIGTIGE root cause (med bevis)
 
-## Hvad sker der (endelig root cause)
+## Beviset fra auth-loggen
 
-Problemet har to dele:
+Auth-loggen viser praecis hvad der sker:
 
-### Del 1: Sessionen doer ved login (eller ved token-udloeb efter ~1 time)
+```text
+14:09:02 - token_revoked (status 200) - refresh #1
+14:09:02 - token_revoked (status 200) - refresh #2
+14:09:02 - token_revoked (status 200) - refresh #3
+14:09:02 - token_revoked (status 200) - refresh #4
+14:09:03 - token_revoked (status 200) - refresh #5
+14:09:03 - 429: Request rate limit reached  <-- HER DOER SESSIONEN
+```
 
-Auth-loggen viser 4 `token_revoked` events og en `429 rate limit` inden for 1 sekund. Det sker fordi for mange samtidige API-kald trigger flere token-refresh forsog paa een gang. Naar to refresh-forsog bruger det SAMME refresh-token, lykkes det foerste, men det andet fejler - og serveren draeeber sessionen.
+6 token-refresh requests inden for 1 sekund. Supabase's rate limiter slaar til, returnerer 429, og klienten tolker det som "session kompromitteret" og fyrer SIGNED_OUT.
 
-**Konkret ved login sker foelgende race condition:**
-- Login.tsx har to redirect-mekanismer der korer samtidigt:
-  1. En `useEffect` der navigerer naar `user` er sat
-  2. `handleSubmit` der ogsaa kalder `navigate('/')`
-- `syncFavoritesOnLogin()` kalder `supabase.auth.getUser()` (et ekstra auth-kald)
-- Samtidigt: ThemeContext loader tema, Gallery fyrer fetchPatterns, PatternCards fyrer checkFavorite + refreshProgress
-- Resultat: 10+ samtidige API-kald inden for 100ms
+## Hvad udloeser stormen
 
-### Del 2: "Gem alt" bruger anon-noeglen (data gemmes IKKE)
+`handleSaveAll` i PatternEditor kalder `supabase.auth.getUser()` foer gemning. Denne funktion laver et NETVAERKS-kald til `/auth/v1/user`. Hvis JWT-tokenet er taet paa at udloebe, trigger klienten internt et token-refresh FoER getUser-kaldet.
 
-Network-loggen bekraefter: ALLE PATCH requests bruger anon-noeglen som Bearer token. Sessionen var allerede doed FOER brugeren trykkede "Gem alt".
+MEN: Supabase-klienten har ogsaa en intern auto-refresh timer der fyrer ~60 sekunder foer token udloeber. Naar BAADE getUser() OG auto-refresh timeren forsoeeger at refreshe paa samme tid, starter en kaede:
 
-`getSession()` tjekket paa linje 452 returnerer en cached session (fra localStorage), men denne session er ugyldig serverside. Supabase's `getSession()` laaser ikke fra serveren men fra browserens cache. Saa den siger "du har en session" selvom den er dead.
+```text
+1. getUser() finder expired token -> trigger refresh med T1 -> faar T2
+2. Auto-refresh timer fyrer -> bruger T2 -> faar T3  
+3. Klienten ser nyt token -> trigger refresh igen -> T3 -> T4
+4. Kaede fortsaetter: T4 -> T5 -> T5 -> ...
+5. Rate limit (429) -> SIGNED_OUT
+```
 
-Endnu vaerre: `Promise.all` fyrer N samtidige PATCH-requests. Hvis tokenet udloeber UNDER disse requests, trigger de alle en refresh - og vi faar stormen igen.
+Derefter: AuthContext saetter user=null, isAdmin=false. Administration-siden ser `!user || !isAdmin` og redirecter til "/". Galleriet loader og fyrer flere queries (som ogsaa kan trigger yderligere refreshes).
+
+## Den EGENTLIGE fejl
+
+**`supabase.auth.getUser()` er et netvaerks-kald der racer med Supabase-klientens interne auto-refresh.** Det var tilfojet som "server-side validering", men det er praecis det der udloeser token-stormen.
+
+`supabase.auth.getSession()` laeser derimod fra LOCAL CACHE - ingen netvaerkskald, ingen token-refresh, ingen race condition.
 
 ## Loesning (4 filer)
 
-### 1. Login.tsx - Fjern race condition ved login
+### 1. PatternEditor.tsx - Erstat getUser() med getSession()
 
-**Problemer:**
-- To redirect-mekanismer (useEffect + handleSubmit) koerer samtidigt
-- `syncFavoritesOnLogin` kalder `getUser()` (unodvendigt auth-kald)
-- Favorit-sync sker FOER navigation, hvilket forsinker og tilfojer samtidige kald
+**Problem**: `getUser()` paa linje 452-453 laver et auth-netvaerkskald der racer med auto-refresh.
 
-**Fix:**
-- Fjern useEffect-redirectet helt - handleSubmit styrer flowet
-- Behold en simpel render-check for brugere der allerede er logget ind
-- Fjern `getUser()` fra syncFavoritesOnLogin - brug `user` fra signIn-responsens onAuthStateChange
-- Flyt favorit-sync til EFTER navigation (fire-and-forget med setTimeout)
+**Fix**: 
+- Erstat `getUser()` med `getSession()` (cached, ingen netvaerkskald)
+- Tjek `session.expires_at` for at sikre tokenet ikke er udloebet
+- Hvis tokenet udloeber inden for 60 sekunder, vis en fejlbesked
+- Ingen aendring i resten af gem-logikken (sekventielle saves er fine)
 
-### 2. PatternEditor.tsx - Sekventielle saves med fejldetektering
+### 2. PatternDialog.tsx - Erstat getUser() med getSession()
 
-**Problemer:**
-- `getSession()` returnerer cached (potentielt stale) session
-- `Promise.all` fyrer N samtidige requests der kan trigge token-refresh-storm
-- Ingen detektering af om data faktisk blev gemt (204 med 0 raekker opdateret = "success")
+**Problem**: `getUser()` paa linje 155 har praecis det samme problem.
 
-**Fix:**
-- Erstat `getSession()` med `getUser()` for reel serverside validering
-- Erstat `Promise.all` med sekventiel for-loop (et request ad gangen)
-- Tilfoej 50ms delay mellem saves for at lade token-operationer settle
-- Verificer at UPDATE faktisk opdaterede raekker (brug `.select()` after update)
-- Tilfoej detektering af auth-fejl med specifik fejlbesked
+**Fix**: Samme aendring - erstat med `getSession()` og tjek `expires_at`.
 
-### 3. AuthContext.tsx - Haandter SIGNED_OUT med brugerbesked
+### 3. AdminDashboard.tsx - Serialiser COUNT queries
 
-**Problem:** Naar sessionen doer (pga. 429), modtager klienten et SIGNED_OUT event. Brugeren redirectes stille til login uden at vide at deres data ikke blev gemt.
+**Problem**: `fetchStats()` fyrer 6 COUNT queries parallelt (bead_patterns x3, categories, profiles, user_progress). Naar Administration loader efter en side-navigation, kan disse 6 samtidige requests trigge samtidige token-refreshes.
 
-**Fix:**
-- Tilfoej en `wasLoggedIn` ref der tracker om brugeren var logget ind
-- Naar SIGNED_OUT fyrer og `wasLoggedIn` er true: vis en toast-besked "Du er blevet logget ud uventet. Dine seneste aendringer er muligvis ikke gemt."
-- Dette giver brugeren klar feedback i stedet for stille datatab
+**Fix**: 
+- Koer queries sekventielt i stedet for parallelt
+- Tilfoej 50ms pause mellem hvert kald
 
-### 4. Login.tsx - Serialiser post-login operationer
+### 4. UserManagement.tsx - Serialiser rolle-hentning
 
-Samlet ny login-flow:
-```text
-handleSubmit:
-  1. signIn(email, password)        -- auth-kald
-  2. navigate('/')                   -- navigation
-  3. setTimeout(() => {              -- forsinket sync
-       syncFavoritesOnLogin()       -- brug bruger fra auth context
-     }, 2000)                       -- 2 sekunders delay
-```
+**Problem**: `fetchUsers()` bruger `Promise.all` til at hente roller for ALLE brugere parallelt. Med N brugere = N samtidige requests.
 
-## Tekniske detaljer
-
-### Login.tsx
-
-```text
-// FOER: Race condition med to redirects
-useEffect(() => {
-  if (user && !authLoading) {
-    setRedirecting(true);
-    navigate('/');
-  }
-}, [user, authLoading, navigate]);
-
-// EFTER: Simpel check i render (ingen useEffect)
-if (user && !authLoading) {
-  return <Navigate to="/" replace />;
-}
-
-// handleSubmit: serialiser flowet
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  // ... validation ...
-  const { error } = await signIn(email, password);
-  if (error) { /* haandter fejl */ return; }
-
-  toast.success('Du er nu logget ind');
-  navigate('/');
-
-  // Sync favorites EFTER navigation med delay
-  setTimeout(() => syncFavoritesOnLogin(), 2000);
-};
-
-// syncFavoritesOnLogin: ingen getUser()
-const syncFavoritesOnLogin = async () => {
-  const localFavorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-  if (localFavorites.length === 0) return;
-
-  // Brug getSession() her - sessionen bor vaere stabil 2 sek efter login
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.user) return;
-
-  await supabase.from('user_favorites').upsert(
-    localFavorites.map((id) => ({
-      user_id: session.user.id,
-      pattern_id: id,
-    })),
-    { onConflict: 'user_id,pattern_id' }
-  );
-  localStorage.removeItem('favorites');
-};
-```
-
-### PatternEditor.tsx - handleSaveAll
-
-```text
-const handleSaveAll = async () => {
-  if (!patternId) return;
-
-  // Verificer session mod serveren (IKKE kun cache)
-  const { data: { user: currentUser }, error: userError } =
-    await supabase.auth.getUser();
-
-  if (userError || !currentUser) {
-    toast({
-      title: 'Session udloebet',
-      description: 'Du er blevet logget ud. Log ind igen for at gemme.',
-      variant: 'destructive',
-    });
-    return;
-  }
-
-  setIsSaving(true);
-  try {
-    // SEKVENTIEL gemning - et request ad gangen
-    for (const plate of plates) {
-      const { error } = await supabase
-        .from('bead_plates')
-        .update({ beads: plate.beads as unknown as Json })
-        .eq('id', plate.id);
-
-      if (error) {
-        // Detekter auth-fejl specifikt
-        if (error.message?.includes('JWT') || error.code === 'PGRST301') {
-          throw new Error('SESSION_EXPIRED');
-        }
-        throw error;
-      }
-
-      // Kort pause mellem saves for at undgaa token-refresh-storm
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-
-    // Thumbnail + metadata
-    const totalBeads = plates.reduce((sum, p) => sum + p.beads.length, 0);
-    const thumbnail = generateThumbnail();
-
-    const { error: metaError } = await supabase
-      .from('bead_patterns')
-      .update({ total_beads: totalBeads, thumbnail })
-      .eq('id', patternId);
-
-    if (metaError) throw metaError;
-
-    setHasUnsavedChanges(false);
-    toast({ title: 'Gemt', description: 'Alle aendringer er gemt.' });
-  } catch (error) {
-    console.error('Error saving:', error);
-    const isAuthError = error instanceof Error &&
-      error.message === 'SESSION_EXPIRED';
-    toast({
-      title: isAuthError ? 'Session udloebet' : 'Fejl',
-      description: isAuthError
-        ? 'Du er blevet logget ud. Log ind igen og proev at gemme.'
-        : 'Kunne ikke gemme aendringer.',
-      variant: 'destructive',
-    });
-  } finally {
-    setIsSaving(false);
-  }
-};
-```
-
-### AuthContext.tsx - Uventet logout-besked
-
-```text
-// Tilfoej en ref for at tracke om brugeren var logget ind
-const wasLoggedInRef = useRef(false);
-
-// I onAuthStateChange:
-if (event === 'SIGNED_IN' && session?.user) {
-  wasLoggedInRef.current = true;
-  // ... eksisterende logik ...
-}
-
-if (event === 'SIGNED_OUT') {
-  const wasLoggedIn = wasLoggedInRef.current;
-  wasLoggedInRef.current = false;
-  currentUserIdRef.current = null;
-  sessionRef.current = null;
-  setUser(null);
-  setIsAdmin(false);
-
-  // Vis besked KUN hvis brugeren ikke selv loggede ud
-  if (wasLoggedIn) {
-    // Import toast fra sonner
-    toast.error('Du er blevet logget ud. Dine seneste aendringer er muligvis ikke gemt.');
-  }
-}
-
-// I signOut funktionen: markér at det er frivilligt
-const signOut = useCallback(async () => {
-  wasLoggedInRef.current = false; // Forhindrer "uventet logout" besked
-  await supabase.auth.signOut();
-  setIsAdmin(false);
-}, []);
-```
+**Fix**: 
+- Hent alle roller i EN enkelt query i stedet for N individuelle
+- Kombiner med profiles-data lokalt
 
 ## Filer der aendres
 
 | Fil | Aendring |
 |-----|----------|
-| `src/pages/Login.tsx` | Fjern useEffect redirect, fjern getUser(), forsinket favorit-sync |
-| `src/components/workshop/PatternEditor.tsx` | Sekventielle saves, getUser() validering, auth-fejl detektering |
-| `src/contexts/AuthContext.tsx` | Uventet logout-besked med wasLoggedInRef |
-| `src/components/gallery/PatternDialog.tsx` | Opdater saveProgress med getUser() validering |
+| `src/components/workshop/PatternEditor.tsx` | Erstat getUser() med getSession() + expires_at tjek |
+| `src/components/gallery/PatternDialog.tsx` | Erstat getUser() med getSession() + expires_at tjek |
+| `src/components/admin/AdminDashboard.tsx` | Serialiser 6 COUNT queries |
+| `src/components/admin/UserManagement.tsx` | Hent roller i 1 query i stedet for N |
+
+## Tekniske detaljer
+
+### PatternEditor.tsx - handleSaveAll (linje 448-516)
+
+```text
+// FOER (linje 451-462):
+const { data: { user: currentUser }, error: userError } =
+  await supabase.auth.getUser();  // <-- NETVAERKSKALD! Trigger token refresh!
+
+if (userError || !currentUser) { ... }
+
+// EFTER:
+const { data: { session } } = await supabase.auth.getSession();  // <-- LOCAL CACHE!
+
+if (!session) {
+  toast({
+    title: 'Session udloebet',
+    description: 'Du er blevet logget ud. Log ind igen for at gemme.',
+    variant: 'destructive',
+  });
+  return;
+}
+
+// Tjek om token udloeber inden for 60 sekunder
+const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
+const now = Date.now();
+if (expiresAt > 0 && expiresAt - now < 60000) {
+  // Token er ved at udloebe - proev at refreshe EN gang
+  const { error: refreshError } = await supabase.auth.refreshSession();
+  if (refreshError) {
+    toast({
+      title: 'Session udloebet',
+      description: 'Din session er udloebet. Log ind igen.',
+      variant: 'destructive',
+    });
+    return;
+  }
+}
+
+// Resten af handleSaveAll forbliver uaendret (sekventielle saves)
+```
+
+### PatternDialog.tsx - saveProgress (linje 150-187)
+
+```text
+// FOER (linje 154-159):
+const { data: { user: currentUser }, error: userError } = 
+  await supabase.auth.getUser();
+if (userError || !currentUser) {
+  toast.error('Session udloebet...');
+  return { error: new Error('Session expired') };
+}
+
+// EFTER:
+const { data: { session } } = await supabase.auth.getSession();
+if (!session) {
+  toast.error('Session udloebet - log ind igen for at gemme progress');
+  return { error: new Error('Session expired') };
+}
+```
+
+### AdminDashboard.tsx - fetchStats (linje 32-81)
+
+```text
+// FOER: 6 parallelle COUNT queries
+const { count: totalPatterns } = await supabase...
+const { count: publicPatterns } = await supabase...
+const { count: privatePatterns } = await supabase...
+const { count: totalCategories } = await supabase...
+const { count: totalUsers } = await supabase...
+const { count: startedPatterns } = await supabase...
+
+// EFTER: Sekventielle queries med pauser
+const { count: totalPatterns } = await supabase
+  .from('bead_patterns').select('*', { count: 'exact', head: true });
+
+const { count: publicPatterns } = await supabase
+  .from('bead_patterns').select('*', { count: 'exact', head: true })
+  .eq('is_public', true);
+
+await new Promise(r => setTimeout(r, 50));
+
+const { count: privatePatterns } = await supabase
+  .from('bead_patterns').select('*', { count: 'exact', head: true })
+  .eq('is_public', false);
+
+const { count: totalCategories } = await supabase
+  .from('categories').select('*', { count: 'exact', head: true });
+
+await new Promise(r => setTimeout(r, 50));
+
+const { count: totalUsers } = await supabase
+  .from('profiles').select('*', { count: 'exact', head: true });
+
+const { count: startedPatterns } = await supabase
+  .from('user_progress').select('*', { count: 'exact', head: true });
+```
+
+### UserManagement.tsx - fetchUsers (linje 73-107)
+
+```text
+// FOER: Promise.all med N individuelle rolle-queries
+const usersWithRoles = await Promise.all(
+  profiles.map(async (profile) => {
+    const { data: roleData } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', profile.user_id)
+      .maybeSingle();
+    return { ...profile, role: roleData?.role || null };
+  })
+);
+
+// EFTER: EN enkelt query der henter ALLE roller
+const { data: profiles } = await supabase
+  .from('profiles')
+  .select('id, user_id, display_name, created_at')
+  .order('created_at', { ascending: false });
+
+// Hent alle roller i en enkelt query
+const userIds = (profiles || []).map(p => p.user_id);
+const { data: allRoles } = await supabase
+  .from('user_roles')
+  .select('user_id, role')
+  .in('user_id', userIds);
+
+// Kombiner lokalt
+const roleMap = new Map(
+  (allRoles || []).map(r => [r.user_id, r.role])
+);
+
+const usersWithRoles = (profiles || []).map(profile => ({
+  ...profile,
+  role: (roleMap.get(profile.user_id) as 'admin' | 'user') || null,
+}));
+```
 
 ## Forventet resultat
 
-- Ved login: Kun 1 auth-kald (signIn) efterfulgt af navigation. Favorit-sync sker 2 sekunder senere. Ingen storm.
-- Ved gem: Sekventielle requests (1 ad gangen med 50ms pause). Ingen samtidige token-refresh forsog.
-- Ved session-tab: Brugeren faar en klar fejlbesked i stedet for stille datatab.
-- Ved "Gem alt": Sessionen valideres mod serveren (getUser) foer gemning starter.
+- `getUser()` erstattes med `getSession()` - ingen ekstra netvaerkskald, ingen token-refresh race
+- Gem-operationer bruger det EKSISTERENDE token fra cache (Supabase-klienten haandterer refresh automatisk internt naar det er noedvendigt)
+- Admin-sider laver faerre samtidige requests, hvilket reducerer risikoen for burst
+- Ingen flere 429 rate limit fejl paa token-endpoint
+- Sessionen forbliver stabil efter gemning OG ved navigation til Administration
+
