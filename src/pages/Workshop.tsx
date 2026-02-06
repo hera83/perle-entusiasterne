@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Upload, Plus, Palette } from 'lucide-react';
 import { ColorManagementDialog } from '@/components/workshop/ColorManagementDialog';
 import { CreatePatternDialog } from '@/components/workshop/CreatePatternDialog';
+import { ImportImageDialog } from '@/components/workshop/ImportImageDialog';
 import { PatternEditor } from '@/components/workshop/PatternEditor';
 
 export const Workshop: React.FC = () => {
@@ -15,6 +16,7 @@ export const Workshop: React.FC = () => {
   const { patternId } = useParams<{ patternId: string }>();
   const [colorDialogOpen, setColorDialogOpen] = useState(false);
   const [createPatternDialogOpen, setCreatePatternDialogOpen] = useState(false);
+  const [importImageDialogOpen, setImportImageDialogOpen] = useState(false);
 
   if (loading) {
     return (
@@ -56,17 +58,17 @@ export const Workshop: React.FC = () => {
               <CardTitle>Importer billede</CardTitle>
               <CardDescription>
                 Upload et billede og konverter det automatisk til en perleplade-opskrift.
-                Du kan fjerne baggrund og beskære billedet først.
+                Du kan beskære billedet og justere dimensioner.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Button className="w-full" disabled>
+              <Button 
+                className="w-full"
+                onClick={() => setImportImageDialogOpen(true)}
+              >
                 <Upload className="h-4 w-4 mr-2" />
                 Vælg billede
               </Button>
-              <p className="text-xs text-muted-foreground mt-2 text-center">
-                Kommer snart
-              </p>
             </CardContent>
           </Card>
 
@@ -141,6 +143,11 @@ export const Workshop: React.FC = () => {
         <CreatePatternDialog
           open={createPatternDialogOpen}
           onOpenChange={setCreatePatternDialogOpen}
+        />
+
+        <ImportImageDialog
+          open={importImageDialogOpen}
+          onOpenChange={setImportImageDialogOpen}
         />
       </div>
     </Layout>
