@@ -35,7 +35,9 @@ export const Announcements: React.FC = () => {
       if (!error && data) {
         // Filter out already dismissed announcements from this session
         const sessionDismissed = sessionStorage.getItem('dismissed_announcements');
-        const dismissedSet = sessionDismissed ? new Set(JSON.parse(sessionDismissed)) : new Set();
+        const dismissedSet: Set<string> = sessionDismissed 
+          ? new Set(JSON.parse(sessionDismissed) as string[]) 
+          : new Set();
         setDismissed(dismissedSet);
         
         const filteredAnnouncements = data.filter(a => !dismissedSet.has(a.id));
