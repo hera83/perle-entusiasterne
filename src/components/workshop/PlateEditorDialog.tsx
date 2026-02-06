@@ -173,6 +173,15 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
           <DialogTitle className="flex items-center justify-between gap-4">
             <span>Række {rowIndex + 1}, Plade {columnIndex + 1}</span>
             <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setForceCompact(!forceCompact)}
+                title={forceCompact ? 'Vis fuld værktøjslinje' : 'Minimer værktøjslinje'}
+                className="h-9 w-9"
+              >
+                {forceCompact ? <PanelLeft className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+              </Button>
               <Button 
                 variant="outline"
                 onClick={handleClose} 
