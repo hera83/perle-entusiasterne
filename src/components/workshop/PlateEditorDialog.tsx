@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { InteractiveBeadGrid } from './InteractiveBeadGrid';
 import { EditorToolbar } from './EditorToolbar';
-import { Save, X } from 'lucide-react';
+import { Save, X, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 interface Bead {
