@@ -145,7 +145,7 @@ export const UserManagement: React.FC = () => {
             role,
           });
 
-        toast.success('Bruger oprettet! En bekræftelses-email er sendt.');
+        toast.success('Bruger oprettet! Brugeren kan nu logge ind.');
         setDialogOpen(false);
         resetForm();
         fetchUsers();
