@@ -237,7 +237,7 @@ export const UserManagement: React.FC = () => {
               <DialogHeader>
                 <DialogTitle>Opret ny bruger</DialogTitle>
                 <DialogDescription>
-                  Udfyld oplysningerne for den nye bruger. De vil modtage en bekræftelses-email.
+                  Udfyld oplysningerne for den nye bruger.
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleCreateUser}>

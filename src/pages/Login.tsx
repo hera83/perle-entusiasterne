@@ -235,6 +235,26 @@ export const Login: React.FC = () => {
 
             <form onSubmit={showFirstAdmin ? handleFirstAdminSignup : handleSubmit}>
               <div className="space-y-4">
+                {showFirstAdmin && (
+                  <div className="space-y-2">
+                    <Label htmlFor="displayName">
+                      Navn
+                      <span className="text-muted-foreground text-xs ml-1">
+                        (Dit fulde navn)
+                      </span>
+                    </Label>
+                    <Input
+                      id="displayName"
+                      type="text"
+                      placeholder="Dit navn"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      required
+                      disabled={loading}
+                    />
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="email">
                     Email
