@@ -93,6 +93,7 @@ export const Gallery: React.FC = () => {
         plate_dimension: p.plate_dimension,
         total_beads: p.total_beads,
         is_public: p.is_public,
+        thumbnail: p.thumbnail || null,
       }));
 
       setPatterns(mappedPatterns);
