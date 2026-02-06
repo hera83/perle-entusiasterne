@@ -16,6 +16,7 @@ export const Workshop: React.FC = () => {
   const { patternId } = useParams<{ patternId: string }>();
   const [colorDialogOpen, setColorDialogOpen] = useState(false);
   const [createPatternDialogOpen, setCreatePatternDialogOpen] = useState(false);
+  const [importImageDialogOpen, setImportImageDialogOpen] = useState(false);
 
   if (loading) {
     return (
