@@ -151,9 +151,9 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
     if (!pattern) return { error: null };
 
     if (user) {
-      // Verify session before writing
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      // Verify session against server (NOT just cache)
+      const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
+      if (userError || !currentUser) {
         toast.error('Session udløbet - log ind igen for at gemme progress');
         return { error: new Error('Session expired') };
       }

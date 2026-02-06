@@ -97,15 +97,16 @@ export const Login: React.FC = () => {
       const localFavorites = JSON.parse(localStorage.getItem('favorites') || '[]');
       if (localFavorites.length === 0) return;
 
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (!currentUser) return;
+      // Use getSession() here - session should be stable 2s after login
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
 
       // Single bulk upsert instead of N individual requests
       await supabase
         .from('user_favorites')
         .upsert(
           localFavorites.map((patternId: string) => ({
-            user_id: currentUser.id,
+            user_id: session.user.id,
             pattern_id: patternId,
           })),
           { onConflict: 'user_id,pattern_id' }

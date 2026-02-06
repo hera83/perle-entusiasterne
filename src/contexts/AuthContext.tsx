@@ -138,6 +138,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signOut = useCallback(async () => {
+    wasLoggedInRef.current = false; // Prevent "unexpected logout" message
     await supabase.auth.signOut();
     setIsAdmin(false);
   }, []);
