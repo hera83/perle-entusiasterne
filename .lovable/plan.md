@@ -1,192 +1,235 @@
 
+# Fix: Session tabes under gemning (og stille datatab)
 
-# Fix: Login-loop med token-storm og session-tab
+## Problem-analyse
 
-## Hvad sker der (root cause analyse)
+Der er TO sammenkoblede problemer:
 
-Problemet er mere alvorligt end en simpel race condition. Her er den praecise kaede af haendelser:
+### Problem 1: Sessionen mistes efter login
+Auth-loggen viser 6+ samtidige `token_revoked` events inden for 2-3 sekunder efter login. Det sker fordi login udloeser en kaskade af samtidige database-kald:
+- `syncFavoritesOnLogin()` koerer en for-loop med individuelle upserts (et kald per favorit)
+- `checkAdminRole()` koerer et kald
+- `ThemeContext` koerer et kald for at hente tema
+- Alle disse kald rammer databasen naesten samtidigt og kan trigge samtidige token-refresh forsog
 
-1. Du logger ind med din email og adgangskode - det lykkes
-2. Auth-systemet sender en SIGNED_IN event til `onAuthStateChange`
-3. Handleren saetter `setSession(session)` og `setUser(session.user)` - dette skaber NYE React-objekter HVER gang, selv om det er den SAMME bruger
-4. Disse nye objekter trigger re-renders i HELE appen:
-   - **ThemeContext** afhanger af `[user]` og fyrer en database-query for at hente temaet
-   - **Gallery** afhanger af `[user, isAdmin]` og fyrer `fetchPatterns` for at hente moenstre
-   - **checkAdminRole** fyrer endnu en database-query
-   - **Login** kalder `navigate('/')` UNDER render (ikke i en useEffect)
-5. Alle disse samtidige database-queries kan trigger ekstra token-operations internt i auth-klienten
-6. Auth-systemet fyrer TOKEN_REFRESHED events, som OGSAA trigger `onAuthStateChange`
-7. Hvert TOKEN_REFRESHED event starter hele cyklussen forfra (punkt 3-6)
-8. Resultatet: 30+ token-refreshes inden for 2-3 sekunder
-9. Serveren rammer rate-limit (429-fejl) paa token-refresh
-10. Naar en token-refresh fejler med 429, mister klienten sin session
-11. Brugeren er nu "logget ud" - alle efterfoelgende requests bruger kun den anonyme noegle
+Naar to refresh-forsog bruger det SAMME refresh token, lykkes det ene, men det andet fejler. Supabase-klienten tolker dette som "session kompromitteret" og logger brugeren ud.
 
-**Bevis fra loggen**: Auth-loggene viser 30+ `token_revoked` events inden for 2-3 sekunder, efterfulgt af en 429 rate-limit fejl. Network-requests viser at ALLE database-queries bruger den anonyme noegle (ikke brugerens JWT), og `user_roles`-queryen returnerer tomt array `[]` fordi RLS-policyen kraever `auth.uid() = user_id`.
+### Problem 2: Tavs datatab ved gem
+Network-loggen afslorer noget kritisk: ALLE gem-requests bruger **anon-noeglen** som authorization - ikke brugerens JWT token. Det betyder sessionen allerede var tabt FoER brugeren trykkede "Gem alt".
 
-## Loesning (4 filer skal rettes)
+RLS-politikkerne paa `bead_plates` kraever `auth.uid()` for UPDATE. Med anon-noeglen er `auth.uid() = NULL`, saa UPDATE matcher ingen raekker. Supabase returnerer status 204 (ingen fejl), men NUL raekker opdateres. **Data bliver IKKE gemt, men brugeren faar ingen fejlbesked.**
 
-### 1. AuthContext.tsx - Hovedfix
+Naar koden naar til at opdatere `bead_patterns` (thumbnail), fejler det ogsaa stille. Til sidst opfanger noget at sessionen er vaek, og brugeren redirectes til login.
 
-Problemet: `onAuthStateChange` reagerer paa ALLE events (inkl. TOKEN_REFRESHED) og skaber nye state-objekter hver gang.
+## Loesning (4 filer)
 
-**Aendringer:**
-- Tilfoej event-filtrering i `onAuthStateChange`: Ignorer TOKEN_REFRESHED events helt - de aendrer ikke hvem brugeren er
-- Brug `useRef` til at holde styr paa den aktuelle bruger-ID, saa vi kun opdaterer state naar brugeren faktisk skifter
-- Fjern `setTimeout`-wrapperen for `checkAdminRole` - den er unoevendig og skaber ekstra async-cyklusser
-- I `onAuthStateChange`: kun opdater user/session ved SIGNED_IN og SIGNED_OUT
+### 1. AuthContext.tsx - Stabil session-haandtering
+
+**Problem**: TOKEN_REFRESHED ignoreres helt, saa React-stateens session-objekt bliver stale. Det er ikke i sig selv aarsagen, men det betyder at vi mister synkronisering med Supabase-klienten.
+
+**Fix**: 
+- Haandter TOKEN_REFRESHED ved at opdatere session-state UDEN at aendre user/isAdmin
+- Behold currentUserIdRef for at forhindre unodvendige user-opdateringer
+- Tilfoej INITIAL_SESSION haandtering der ogsaa opdaterer session silently
 
 ```text
 onAuthStateChange handler (ny logik):
-  - Hvis event er TOKEN_REFRESHED: ignorer (sessionen er allerede opdateret internt)
-  - Hvis event er SIGNED_IN: saet user/session, kald checkAdminRole
-  - Hvis event er SIGNED_OUT: nulstil user/session/isAdmin
-  - Hvis event er INITIAL_SESSION: ignorer (initializeAuth haandterer dette)
+  TOKEN_REFRESHED:
+    - Opdater session state (holder React i sync med klienten)
+    - Opdater IKKE user eller isAdmin (undgaar re-render-kaskade)
+  
+  INITIAL_SESSION:
+    - Ignorer (initializeAuth haandterer dette)
+  
+  SIGNED_IN:
+    - Kun opdater hvis user ID er ny (via ref)
+  
+  SIGNED_OUT:
+    - Nulstil alt
 ```
 
-### 2. Login.tsx - Stop navigate under render
+### 2. PatternEditor.tsx - Sikker batch-gemning
 
-Problemet: Linje 51-53 kalder `navigate('/')` UNDER render, ikke i en `useEffect`. React kan ikke haandtere navigation under render korrekt.
+**Problem**: `handleSaveAll` koerer en sekventiel for-loop med N individuelle UPDATE-kald (et per plade). Med f.eks. 6 plader = 7 requests. Desuden er der ingen session-verifikation foer gemning.
 
-**Aendring:** Flyt redirectet til en `useEffect` med `[user, authLoading, navigate]` som dependencies.
+**Fix**:
+- Tilfoej session-tjek FOER gemning starter (kald `getSession()`)
+- Hvis sessionen er ugyldig, vis en tydelig fejlbesked i stedet for at gemme stille
+- Erstat den sekventielle for-loop med `Promise.all` for at reducere samlet tid
+- Tilfoej fejldetektering der fanger auth-fejl specifikt
 
-### 3. ThemeContext.tsx - Stabiliser dependencies
+```text
+handleSaveAll (ny logik):
+  1. Kald supabase.auth.getSession()
+  2. Hvis ingen session: vis fejl "Du er logget ud - log ind igen"
+  3. Opret alle update-promises paa een gang
+  4. Koer Promise.all (parallelt i stedet for sekventielt)
+  5. Hvis nogen fejler: vis praecis fejlbesked
+  6. Opdater thumbnail og total_beads
+```
 
-Problemet: `useEffect` paa linje 45-62 afhanger af `[user]` - et helt objekt. Hver gang `onAuthStateChange` saetter en ny `user`-reference, koerer dette effect igen og fyrer en database-query.
+### 3. Login.tsx - Batch favorit-synkronisering
 
-**Aendring:** Brug `user?.id` i stedet for `user` som dependency. Temaet aendrer sig ikke bare fordi user-objektets reference aendrer sig.
+**Problem**: `syncFavoritesOnLogin` koerer en for-loop der laver individuelle upserts for hver favorit. Med 5 favoritter = 5 sekventielle requests + getUser(), som alle sker umiddelbart efter login = burst af 6+ requests paa 1-2 sekunder.
 
-### 4. Gallery.tsx - Stabiliser fetchPatterns
+**Fix**: 
+- Erstat for-loopen med en enkelt bulk-upsert
+- Fjern det separate `getUser()` kald og brug `user` fra auth context i stedet
 
-Problemet: `useCallback` for `fetchPatterns` afhanger af `[user, isAdmin]`. Hver gang user-objektet faar ny reference, genskabes funktionen, og `useEffect` fyrer den igen.
+```text
+syncFavoritesOnLogin (ny logik):
+  1. Hent favorites fra localStorage
+  2. Hvis ingen: return
+  3. Byg et array af alle favorites
+  4. Koer EN enkelt upsert med hele arrayet
+  5. Slet localStorage
+```
 
-**Aendring:** Brug `user?.id` og `isAdmin` som stabile dependencies i stedet for hele `user`-objektet. Referencen til user-objektet aendrer sig, men user.id forbliver den samme.
+### 4. PatternDialog.tsx - Session-tjek paa progress-gem
+
+**Problem**: `saveProgress` gemmer brugerens progress men tjekker ikke om sessionen er gyldig.
+
+**Fix**: Tilfoej en session-verifikation foer database-operationer i `saveProgress`, saa brugeren faar en tydelig besked hvis sessionen er udloebet.
 
 ## Filer der aendres
 
 | Fil | Aendring |
 |-----|----------|
-| `src/contexts/AuthContext.tsx` | Filtrer events i onAuthStateChange, brug useRef for user ID, fjern setTimeout |
-| `src/pages/Login.tsx` | Flyt redirect fra render til useEffect |
-| `src/contexts/ThemeContext.tsx` | Brug user?.id i dependency array |
-| `src/pages/Gallery.tsx` | Brug user?.id i useCallback dependencies |
+| `src/contexts/AuthContext.tsx` | Haandter TOKEN_REFRESHED med session-opdatering |
+| `src/components/workshop/PatternEditor.tsx` | Session-tjek + batch gem med Promise.all |
+| `src/pages/Login.tsx` | Bulk upsert for favorit-sync |
+| `src/components/gallery/PatternDialog.tsx` | Session-tjek i saveProgress |
 
 ## Tekniske detaljer
 
-### AuthContext.tsx - Ny implementering
+### AuthContext.tsx
 
 ```text
-// Tilfoej useRef
-const currentUserIdRef = useRef<string | null>(null);
-
-useEffect(() => {
-  let isMounted = true;
-
-  // Listener for ONGOING auth changes
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(
-    (event, session) => {
-      if (!isMounted) return;
-
-      // KRITISK: Ignorer TOKEN_REFRESHED - det aendrer ikke brugeren
-      if (event === 'TOKEN_REFRESHED') return;
-
-      // Kun opdater state ved meningsfulde aendringer
-      if (event === 'SIGNED_OUT') {
-        currentUserIdRef.current = null;
-        setSession(null);
-        setUser(null);
-        setIsAdmin(false);
-        return;
-      }
-
-      if (event === 'SIGNED_IN' && session?.user) {
-        // Kun opdater hvis det er en ny bruger
-        if (currentUserIdRef.current !== session.user.id) {
-          currentUserIdRef.current = session.user.id;
-          setSession(session);
-          setUser(session.user);
-          checkAdminRole(session.user.id).then(result => {
-            if (isMounted) setIsAdmin(result);
-          });
-        }
-      }
-    }
-  );
-
-  // INITIAL load
-  const initializeAuth = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!isMounted) return;
-
-      setSession(session);
-      setUser(session?.user ?? null);
-      currentUserIdRef.current = session?.user?.id ?? null;
-
-      if (session?.user) {
-        const adminResult = await checkAdminRole(session.user.id);
-        if (isMounted) setIsAdmin(adminResult);
-      }
-    } catch (err) {
-      console.error('Error initializing auth:', err);
-    } finally {
-      if (isMounted) setLoading(false);
-    }
-  };
-
-  initializeAuth();
-
-  return () => {
-    isMounted = false;
-    subscription.unsubscribe();
-  };
-}, []);
-```
-
-### Login.tsx - useEffect redirect
-
-```text
-// FOER (under render - FORKERT):
-if (user && !authLoading) {
-  navigate('/');
-  return null;
+// I onAuthStateChange:
+if (event === 'TOKEN_REFRESHED') {
+  // Opdater session saa React state forbliver synkroniseret
+  if (session) {
+    setSession(session);
+  }
+  return; // Opdater IKKE user/isAdmin - undgaar re-render kaskade
 }
 
-// EFTER (i useEffect - KORREKT):
-const [redirecting, setRedirecting] = useState(false);
+if (event === 'INITIAL_SESSION') return; // initializeAuth haandterer dette
+```
 
-useEffect(() => {
-  if (user && !authLoading) {
-    setRedirecting(true);
-    navigate('/');
+### PatternEditor.tsx - handleSaveAll
+
+```text
+const handleSaveAll = async () => {
+  if (!patternId) return;
+
+  // KRITISK: Verificer session foer vi starter
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    toast({
+      title: 'Session udloebet',
+      description: 'Du er blevet logget ud. Log ind igen for at gemme.',
+      variant: 'destructive',
+    });
+    return;
   }
-}, [user, authLoading, navigate]);
 
-if (redirecting) return null;
+  setIsSaving(true);
+  try {
+    // Batch: Koer alle plate-updates parallelt
+    const updatePromises = plates.map(plate =>
+      supabase
+        .from('bead_plates')
+        .update({ beads: plate.beads as unknown as Json })
+        .eq('id', plate.id)
+    );
+
+    const results = await Promise.all(updatePromises);
+    
+    // Tjek for fejl
+    const errors = results.filter(r => r.error);
+    if (errors.length > 0) {
+      throw errors[0].error;
+    }
+
+    // Thumbnail + metadata
+    const totalBeads = plates.reduce((sum, plate) => sum + plate.beads.length, 0);
+    const thumbnail = generateThumbnail();
+
+    const { error: metaError } = await supabase
+      .from('bead_patterns')
+      .update({ total_beads: totalBeads, thumbnail })
+      .eq('id', patternId);
+
+    if (metaError) throw metaError;
+
+    setHasUnsavedChanges(false);
+    toast({ title: 'Gemt', description: 'Alle aendringer er gemt.' });
+  } catch (error) {
+    console.error('Error saving:', error);
+    toast({
+      title: 'Fejl',
+      description: 'Kunne ikke gemme aendringer. Proev at logge ind igen.',
+      variant: 'destructive',
+    });
+  } finally {
+    setIsSaving(false);
+  }
+};
 ```
 
-### ThemeContext.tsx - Stabil dependency
+### Login.tsx - syncFavoritesOnLogin
 
 ```text
-// FOER:
-}, [user]);
+const syncFavoritesOnLogin = async () => {
+  try {
+    const localFavorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+    if (localFavorites.length === 0) return;
 
-// EFTER:
-}, [user?.id]);
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (!currentUser) return;
+
+    // EN enkelt bulk upsert i stedet for N individuelle
+    await supabase
+      .from('user_favorites')
+      .upsert(
+        localFavorites.map((patternId: string) => ({
+          user_id: currentUser.id,
+          pattern_id: patternId,
+        })),
+        { onConflict: 'user_id,pattern_id' }
+      );
+
+    localStorage.removeItem('favorites');
+  } catch (err) {
+    console.error('Error syncing favorites:', err);
+  }
+};
 ```
 
-### Gallery.tsx - Stabil useCallback
+### PatternDialog.tsx - saveProgress
 
 ```text
-// FOER:
-const fetchPatterns = useCallback(async (...) => {
-  // bruger user og isAdmin direkte
-}, [user, isAdmin]);
+const saveProgress = async (completed: string[], position: PlatePosition) => {
+  if (!pattern) return { error: null };
 
-// EFTER:
-const userId = user?.id;
-const fetchPatterns = useCallback(async (...) => {
-  // bruger userId og isAdmin
-}, [userId, isAdmin]);
+  if (user) {
+    // Verificer session foerst
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return { error: new Error('Session expired') };
+    }
+
+    const { error } = await supabase
+      .from('user_progress')
+      .upsert({...}, { onConflict: 'user_id,pattern_id' });
+
+    if (error) return { error };
+  } else {
+    localStorage.setItem(...);
+  }
+
+  onProgressChange?.();
+  return { error: null };
+};
 ```
-
