@@ -144,6 +144,11 @@ export const Workshop: React.FC = () => {
           open={createPatternDialogOpen}
           onOpenChange={setCreatePatternDialogOpen}
         />
+
+        <ImportImageDialog
+          open={importImageDialogOpen}
+          onOpenChange={setImportImageDialogOpen}
+        />
       </div>
     </Layout>
   );
