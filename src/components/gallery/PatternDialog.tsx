@@ -255,10 +255,6 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
   const canGoPrev = currentPosition.row > 1 || currentPosition.plate > 1;
   const canGoNext = pattern && (currentPosition.row < pattern.plate_height || currentPosition.plate < pattern.plate_width);
 
-  const handlePrint = () => {
-    window.print();
-  };
-
   if (!pattern) return null;
 
   return (
