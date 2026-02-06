@@ -59,7 +59,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
       loadUserTheme();
     }
-  }, [user]);
+  }, [user?.id]);
 
   // Update resolved theme and apply to document
   useEffect(() => {

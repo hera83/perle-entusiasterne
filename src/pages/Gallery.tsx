@@ -34,6 +34,7 @@ export const Gallery: React.FC = () => {
   const [selectedPattern, setSelectedPattern] = useState<Pattern | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
+  const userId = user?.id;
   const fetchPatterns = useCallback(async (query?: string, categoryId?: string | null) => {
     setLoading(true);
     try {
@@ -58,8 +59,8 @@ export const Gallery: React.FC = () => {
 
       if (isAdmin) {
         // Admins see everything
-      } else if (user) {
-        request = request.or(`is_public.eq.true,user_id.eq.${user.id}`);
+      } else if (userId) {
+        request = request.or(`is_public.eq.true,user_id.eq.${userId}`);
       } else {
         request = request.eq('is_public', true);
       }
@@ -102,7 +103,7 @@ export const Gallery: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [user, isAdmin]);
+  }, [userId, isAdmin]);
 
   useEffect(() => {
     fetchPatterns();

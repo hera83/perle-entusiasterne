@@ -47,9 +47,17 @@ export const Login: React.FC = () => {
     checkForUsers();
   }, []);
 
+  const [redirecting, setRedirecting] = useState(false);
+
   // Redirect if already logged in (only after auth is fully loaded)
-  if (user && !authLoading) {
-    navigate('/');
+  useEffect(() => {
+    if (user && !authLoading) {
+      setRedirecting(true);
+      navigate('/');
+    }
+  }, [user, authLoading, navigate]);
+
+  if (redirecting) {
     return null;
   }
 
