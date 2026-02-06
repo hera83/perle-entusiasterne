@@ -1,239 +1,244 @@
 
+# Fix: "Browser Session" tilgang - ignorer Supabase's interne SIGNED_OUT
 
-# Fix: Deaktiver auto-refresh KORREKT via property override
+## Problemet (nu med fuld forstaelse)
 
-## Problemet (med bevis fra kildekoden)
+Alle tidligere fixes har proevet at forhindre token-refresh stormen. Men den EGENTLIGE fejl er at appen REAGERER paa `SIGNED_OUT` events fra Supabase-klienten. Disse events fyres af mange interne grunde (failed refresh, rate limit, token reuse detection), og hver gang de fyrer, rydder vi brugerens state og redirecter til forsiden.
 
-`stopAutoRefresh()` har ALDRIG virket i nogen af de tidligere fixes. Her er hvorfor:
+## Den nye tilgang: Ignorer SIGNED_OUT helt
 
-### Supabase-klientens interne flow (fra kildekoden)
+I stedet for at kaempe med Supabase-klientens interne mekanismer, goer vi appen immun over for dem:
 
-```text
-createClient() 
-  -> GoTrueClient constructor
-    -> this.autoRefreshToken = true  (lagret som property)
-    -> this.initialize()             (asynkron!)
-
-_initialize()
-  -> _recoverAndRefresh()            (tjekker gammel session)
-  -> _handleVisibilityChange()       (registrerer visibility listener)
-    -> _onVisibilityChanged(true)
-      -> if (this.autoRefreshToken)   <-- TJEKKER PROPERTY
-        -> _startAutoRefresh()        <-- STARTER AUTO-REFRESH
-```
-
-### Hvad vores kode goer
-
-```text
-useEffect() koerer:
-  1. stopAutoRefresh()     <-- Koerer FOER _initialize() er faerdig!
-                               Intet at stoppe endnu = no-op
-  2. onAuthStateChange()   <-- Registrerer callback
-  3. getSession()          <-- Venter paa _initialize()
-                               _initialize() kalder _handleVisibilityChange()
-                               som GENSTARTER auto-refresh!
-```
-
-Resultatet: `stopAutoRefresh()` er en komplet no-op. Auto-refresh koerer ALTID.
-
-Derudover: Hver gang brugeren skifter tab (eller preview-iframet re-fokuseres), koerer Supabase-klienten internt:
-
-```text
-window 'visibilitychange' event
-  -> _onVisibilityChanged()
-    -> if (this.autoRefreshToken)   <-- Stadig true!
-      -> _startAutoRefresh()        <-- Genstarter IGEN
-```
-
-## Loesningen: Override `autoRefreshToken` property
-
-Den ENESTE maade at forhindre auto-refresh paa er at saette `autoRefreshToken = false` DIREKTE paa klient-instansen. Alle interne checks bruger denne property:
-
-- `_handleVisibilityChange()`: `if (this.autoRefreshToken)` -> starter auto-refresh
-- `_onVisibilityChanged()`: `if (this.autoRefreshToken)` -> starter auto-refresh ved tab-switch
-- `_recoverAndRefresh()`: `if (this.autoRefreshToken && currentSession.refresh_token)` -> refresher ved init
-
-Ved at saette property'en til `false` FOER noget andet sker, vil INGEN af disse code paths aktiveres.
-
-## Aendringer (2 filer)
-
-### 1. Ny fil: `src/lib/supabase-auth-config.ts`
-
-Opretter en lille initialiseringsmodul der:
-- Importerer supabase-klienten
-- Saetter `autoRefreshToken = false` med det samme (synkront, ved modul-load)
-- Eksporterer en `initializeAuth()` funktion der AuthContext kan kalde
-
-Dette sikrer at property'en er sat FOER React overhovedet renderer.
-
-```text
-import { supabase } from '@/integrations/supabase/client';
-
-// Deaktiver auto-refresh SYNKRONT ved modul-load
-// Dette sker FOER React renderer, saa _initialize() 
-// aldrig starter auto-refresh
-(supabase.auth as any).autoRefreshToken = false;
-
-export async function cleanupAutoRefresh() {
-  // Vent paa at initialization er faerdig
-  await supabase.auth.getSession();
-  // Ryd op i eventuelt allerede startede timers og visibility listeners
-  await supabase.auth.stopAutoRefresh();
-}
-```
-
-### 2. `src/contexts/AuthContext.tsx`
-
-- Importerer det nye modul (import = synkron koersel af modul-kode)
-- Kalder `cleanupAutoRefresh()` EFTER `getSession()` i stedet for foer
-- Beholder vores manuelle `scheduleRefresh` timer uaendret
-
-Aendringer i `useEffect`:
-
-```text
-// FOER:
-useEffect(() => {
-  supabase.auth.stopAutoRefresh();  // <-- NO-OP!
-  
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(...);
-  
-  const initializeAuth = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    // ...
-  };
-  initializeAuth();
-}, []);
-
-// EFTER:
-import { cleanupAutoRefresh } from '@/lib/supabase-auth-config';
-
-useEffect(() => {
-  // INGEN stopAutoRefresh() her - det virker ikke foer init er faerdig
-  
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(...);
-  
-  const initializeAuth = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    // NU er initialization faerdig - ryd op i eventuelle timers
-    await cleanupAutoRefresh();
-    
-    // ... resten af init (scheduleRefresh, checkAdminRole, etc.)
-  };
-  initializeAuth();
-}, []);
-```
+1. **SIGNED_OUT fra onAuthStateChange: IGNORER** - ryd ALDRIG brugerstate baseret paa denne event
+2. **"Log ud" knappen: Den ENESTE maade at logge ud** - `signOut()` funktionen rydder state direkte
+3. **Operationsfejl (401): Haandter graciost** - hvis en gem/query fejler med auth-fejl, redirect til login
+4. **Behold manual refresh timer** - holder tokenet gyldigt i baggrunden
 
 ## Hvorfor dette virker
 
-1. **Modul-import er synkron**: Naar AuthContext importerer `supabase-auth-config`, koeres `autoRefreshToken = false` OEJEBLIKKELIGT - foer React renderer, foer useEffect koerer, foer alt andet.
-
-2. **Alle interne checks fejler**: Supabase-klientens `_handleVisibilityChange()`, `_onVisibilityChanged()`, og `_recoverAndRefresh()` tjekker alle `this.autoRefreshToken`. Da den er `false`, starter de ALDRIG auto-refresh.
-
-3. **Tab-skift udloeser ikke refresh**: `_onVisibilityChanged()` starter kun auto-refresh hvis `this.autoRefreshToken === true`. Det er det ikke laengere.
-
-4. **Vores manuelle timer styrer refresh**: `scheduleRefresh()` i AuthContext fyrer praecis 1 gang, 5 minutter foer token udloeber. Ingen loop, ingen race condition.
-
-5. **`cleanupAutoRefresh()` rydder op**: Selv hvis `_initialize()` naaede at starte noget foer vores property-override tog effekt, rydder `cleanupAutoRefresh()` op efter init er faerdig.
-
-## Tekniske detaljer
-
-### `src/lib/supabase-auth-config.ts` (ny fil)
-
 ```text
-import { supabase } from '@/integrations/supabase/client';
+FOER (saarbar):
+  Supabase intern refresh fejler -> SIGNED_OUT event -> user = null -> redirect til "/"
+  Bruger mister alt arbejde!
 
-// KRITISK: Dette koerer synkront ved modul-load, FOER React renderer.
-// Det forhindrer Supabase-klientens interne auto-refresh fra nogensinde at starte.
-//
-// Kildekode-reference (GoTrueClient.js):
-//   _onVisibilityChanged() linje 2281: if (this.autoRefreshToken) -> _startAutoRefresh()
-//   _recoverAndRefresh() linje 1916: if (this.autoRefreshToken) -> _callRefreshToken()
-//   _handleVisibilityChange() linje 2250: if (this.autoRefreshToken) -> startAutoRefresh()
-//
-// Ved at saette denne til false, vil INGEN af disse code paths aktiveres.
-(supabase.auth as any).autoRefreshToken = false;
-
-/**
- * Rydder op i eventuelle auto-refresh timers og visibility listeners
- * der blev startet under initialization.
- * 
- * SKAL kaldes EFTER supabase.auth.getSession() (som venter paa init).
- */
-export async function cleanupAutoRefresh() {
-  await supabase.auth.stopAutoRefresh();
-}
-```
-
-### `src/contexts/AuthContext.tsx` - aendringer
-
-```text
-// Tilfoej import (dette KOERER modulet synkront = saetter autoRefreshToken = false)
-import { cleanupAutoRefresh } from '@/lib/supabase-auth-config';
-
-// I useEffect:
-useEffect(() => {
-  let isMounted = true;
-
-  // FJERNET: supabase.auth.stopAutoRefresh() 
-  // (virkede aldrig - autoRefreshToken property er allerede sat til false via import)
-
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(
-    (event, session) => {
-      // ... eksisterende handler uaendret
-    }
-  );
-
-  const initializeAuth = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!isMounted) return;
-
-      // Ryd op EFTER initialization er faerdig
-      await cleanupAutoRefresh();
-
-      // ... resten af init uaendret (sessionRef, setUser, scheduleRefresh, etc.)
-    } catch (err) {
-      console.error('Error initializing auth:', err);
-    } finally {
-      if (isMounted) setLoading(false);
-    }
-  };
-
-  initializeAuth();
-
-  return () => {
-    isMounted = false;
-    subscription.unsubscribe();
-    if (refreshTimerRef.current) {
-      clearTimeout(refreshTimerRef.current);
-      refreshTimerRef.current = null;
-    }
-  };
-}, [scheduleRefresh]);
+EFTER (robust):
+  Supabase intern refresh fejler -> SIGNED_OUT event -> IGNORERET
+  Bruger forbliver "logget ind" i UI
+  Naeste operation fejler med 401 -> "Din session er udloebet, log ind igen"
+  Bruger ser en tydelig fejlbesked, mister ikke arbejde
 ```
 
 ## Filer der aendres
 
 | Fil | Aendring |
 |-----|----------|
-| `src/lib/supabase-auth-config.ts` | NY FIL - saetter autoRefreshToken = false ved modul-load |
-| `src/contexts/AuthContext.tsx` | Importerer ny fil, flytter cleanup til efter init |
+| `src/contexts/AuthContext.tsx` | Ignorer SIGNED_OUT events, signOut() rydder direkte |
+| `src/components/workshop/PatternEditor.tsx` | Tilfoej auth-fejl haandtering der redirecter |
+| `src/components/gallery/PatternDialog.tsx` | Tilfoej auth-fejl haandtering |
+| `src/pages/Administration.tsx` | Tilfoej session-recovery ved mount |
 
-## Forskellen fra alle tidligere forsog
+## Tekniske detaljer
 
-| Forsog | Hvorfor det ikke virkede |
-|--------|------------------------|
-| stopAutoRefresh() foer init | No-op - intet at stoppe endnu |
-| stopAutoRefresh() + scheduleRefresh | stopAutoRefresh stadig no-op, og visibility listener genstarter auto-refresh |
-| Serialisere queries | Problemet er IKKE queries, det er auto-refresh timeren |
-| getSession() i stedet for getUser() | Hjjaelper ikke naar auto-refresh allerede looper |
-| **Ny: autoRefreshToken = false** | **Forhindrer ALLE interne auto-refresh code paths** |
+### AuthContext.tsx - Kerneaendringen
+
+```text
+// onAuthStateChange handler:
+supabase.auth.onAuthStateChange((event, session) => {
+  if (!isMounted) return;
+
+  // TOKEN_REFRESHED: opdater session ref, ingen re-render
+  if (event === 'TOKEN_REFRESHED') {
+    if (session) {
+      sessionRef.current = session;
+      scheduleRefresh(session);
+    }
+    return;
+  }
+
+  // INITIAL_SESSION: haandteres af initializeAuth
+  if (event === 'INITIAL_SESSION') return;
+
+  // SIGNED_OUT: IGNORER FULDSTAENDIGT
+  // Vi rydder KUN brugerstate via den eksplicitte signOut() funktion
+  // Dette goer appen immun over for Supabase-klientens interne SIGNED_OUT events
+  if (event === 'SIGNED_OUT') {
+    return; // <-- DET ER HELE AENDRINGEN
+  }
+
+  // SIGNED_IN: opdater state som foer
+  if (event === 'SIGNED_IN' && session?.user) {
+    wasLoggedInRef.current = true;
+    if (currentUserIdRef.current !== session.user.id) {
+      currentUserIdRef.current = session.user.id;
+      sessionRef.current = session;
+      setUser(session.user);
+      scheduleRefresh(session);
+      checkAdminRole(session.user.id).then(result => {
+        if (isMounted) setIsAdmin(result);
+      });
+    } else {
+      sessionRef.current = session;
+      scheduleRefresh(session);
+    }
+  }
+});
+```
+
+### AuthContext.tsx - signOut() rydder state direkte
+
+```text
+const signOut = useCallback(async () => {
+  // Ryd ALLE auth-relaterede state FOER vi kalder Supabase
+  currentUserIdRef.current = null;
+  sessionRef.current = null;
+  wasLoggedInRef.current = false;
+  setUser(null);
+  setIsAdmin(false);
+
+  // Ryd refresh timer
+  if (refreshTimerRef.current) {
+    clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = null;
+  }
+
+  // Kald Supabase signOut (vi har allerede ryddet vores state,
+  // saa SIGNED_OUT eventet er irrelevant)
+  try {
+    await supabase.auth.signOut();
+  } catch (err) {
+    // Ignorer fejl - vi har allerede ryddet state
+    console.error('Error during signOut:', err);
+  }
+}, []);
+```
+
+### AuthContext.tsx - Ny verifySession funktion
+
+Tilfoej en funktion som komponenter kan bruge til at verificere sessionen foer kritiske operationer:
+
+```text
+const verifySession = useCallback(async (): Promise<boolean> => {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session) return true;
+
+  // Session er virkelig vaek - ryd state og redirect
+  currentUserIdRef.current = null;
+  sessionRef.current = null;
+  setUser(null);
+  setIsAdmin(false);
+  if (refreshTimerRef.current) {
+    clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = null;
+  }
+  return false;
+}, []);
+```
+
+Tilfoej `verifySession` til AuthContextType interfacet og context value.
+
+### PatternEditor.tsx - Auth-fejl haandtering
+
+I `handleSaveAll`, naar en save fejler med auth-fejl, kald `verifySession`:
+
+```text
+const { user, verifySession } = useAuth();
+
+// I handleSaveAll catch block:
+catch (error) {
+  const isAuthError = error instanceof Error &&
+    (error.message === 'SESSION_EXPIRED' ||
+     error.message?.includes('JWT') ||
+     error.message?.includes('401'));
+
+  if (isAuthError) {
+    const isValid = await verifySession();
+    if (!isValid) {
+      toast({
+        title: 'Session udloebet',
+        description: 'Du er blevet logget ud. Log ind igen for at gemme.',
+        variant: 'destructive',
+      });
+      navigate('/login');
+      return;
+    }
+  }
+
+  toast({
+    title: 'Fejl',
+    description: 'Kunne ikke gemme aendringer.',
+    variant: 'destructive',
+  });
+}
+```
+
+### PatternDialog.tsx - Auth-fejl haandtering
+
+Samme moenster: fang auth-fejl og kald `verifySession`:
+
+```text
+const saveProgress = async (completed: string[], position: PlatePosition) => {
+  if (!pattern) return { error: null };
+
+  if (user) {
+    const { error } = await supabase
+      .from('user_progress')
+      .upsert({ ... });
+
+    if (error) {
+      // Tjek om det er en auth-fejl
+      if (error.message?.includes('JWT') || error.code === 'PGRST301') {
+        console.error('Auth error saving progress, session may be expired');
+      }
+      return { error };
+    }
+  }
+  // ...
+};
+```
+
+### Administration.tsx - Fjern aggressiv redirect
+
+I stedet for at redirecte naar `!user || !isAdmin`, tilfoej et ekstra tjek:
+
+```text
+// FOER: Redirect oejeblikkeligt naar user er null
+if (!user || !isAdmin) {
+  return <Navigate to="/" replace />;
+}
+
+// EFTER: Vis loading mens vi tjekker, redirect kun naar vi er sikre
+if (!user && !loading) {
+  return <Navigate to="/login" replace />;
+}
+if (user && !isAdmin && !loading) {
+  return <Navigate to="/" replace />;
+}
+```
+
+## Oversigt over aendringer
+
+### AuthContext.tsx (hoveddaendring):
+- SIGNED_OUT handler: aendret fra "ryd alt" til "ignorer"
+- signOut(): rydder state DIREKTE (ikke via event)
+- Ny verifySession() funktion eksponeret via context
+- Behold alt andet (autoRefreshToken=false, scheduleRefresh, cleanupAutoRefresh)
+
+### PatternEditor.tsx:
+- Import verifySession fra useAuth
+- I catch-block: kald verifySession ved auth-fejl, redirect til login
+
+### PatternDialog.tsx:
+- Tilfoej auth-fejl logging (ikke redirect - det er en dialog)
+
+### Administration.tsx:
+- Adskil "ingen bruger" og "ikke admin" checks
+- Redirect til /login (ikke /) naar ingen bruger
 
 ## Forventet resultat
 
-- INGEN auto-refresh loop - den interne mekanisme kan aldrig starte
-- Tab-skift udloeser IKKE token refresh
-- Praecis 1 refresh per session - vores timer fyrer 5 min foer udloeb
-- Sessionen forbliver stabil ved navigation, gemning, tab-skift og alt andet
-
+- Supabase-klientens interne SIGNED_OUT events pavirker IKKE brugerens oplevelse
+- "Log ud" knappen virker stadig normalt
+- Hvis tokenet udloeber og refresh fejler, faar brugeren en tydelig fejlbesked naar de proever at gemme
+- Administration-siden forbliver stabil ved navigation
+- Docker + preview kan bruges samtidig uden at pavirke hinanden
+- Ingen flere "Du er blevet logget ud" beskeder medmindre brugeren selv logger ud
