@@ -53,16 +53,26 @@ interface ColorInfo {
 // Helper function to safely parse beads from JSON
 const parseBeads = (beadsJson: Json): Bead[] => {
   if (!Array.isArray(beadsJson)) return [];
-  return beadsJson.filter((item): item is Bead => {
-    return (
+  const result: Bead[] = [];
+  for (const item of beadsJson) {
+    if (
       typeof item === 'object' &&
       item !== null &&
       'row' in item &&
       'col' in item &&
       typeof (item as Record<string, unknown>).row === 'number' &&
       typeof (item as Record<string, unknown>).col === 'number'
-    );
-  });
+    ) {
+      result.push({
+        row: (item as Record<string, unknown>).row as number,
+        col: (item as Record<string, unknown>).col as number,
+        colorId: typeof (item as Record<string, unknown>).colorId === 'string' 
+          ? (item as Record<string, unknown>).colorId as string 
+          : null,
+      });
+    }
+  }
+  return result;
 };
 
 export const PatternEditor: React.FC = () => {
