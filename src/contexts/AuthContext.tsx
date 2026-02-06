@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { cleanupAutoRefresh } from '@/lib/supabase-auth-config';
 import { toast } from 'sonner';
 
 interface AuthContextType {
@@ -84,8 +85,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let isMounted = true;
 
-    // STOP the internal auto-refresh that causes the refresh loop
-    supabase.auth.stopAutoRefresh();
+    // autoRefreshToken is already set to false via the supabase-auth-config import
+    // (runs synchronously at module load, before React renders)
 
     // Listener for ONGOING auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -150,6 +151,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!isMounted) return;
+
+        // Clean up any timers/listeners that may have started during init
+        await cleanupAutoRefresh();
 
         sessionRef.current = session ?? null;
         setUser(session?.user ?? null);
