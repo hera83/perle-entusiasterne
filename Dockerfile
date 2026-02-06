@@ -4,7 +4,7 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm install
 
 COPY . .
 
@@ -36,7 +36,7 @@ RUN printf 'server {\n\
     }\n\
 \n\
     location / {\n\
-        try_files $uri $uri/ /index.html;\n\
+        try_files \$uri \$uri/ /index.html;\n\
     }\n\
 }\n' > /etc/nginx/conf.d/default.conf
 
