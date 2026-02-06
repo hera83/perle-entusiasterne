@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Upload, Plus, Palette } from 'lucide-react';
 import { ColorManagementDialog } from '@/components/workshop/ColorManagementDialog';
 import { CreatePatternDialog } from '@/components/workshop/CreatePatternDialog';
+import { ImportImageDialog } from '@/components/workshop/ImportImageDialog';
 import { PatternEditor } from '@/components/workshop/PatternEditor';
 
 export const Workshop: React.FC = () => {
