@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { InteractiveBeadGrid } from './InteractiveBeadGrid';
 import { EditorToolbar } from './EditorToolbar';
-import { Save, X } from 'lucide-react';
+import { Save, X, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 interface Bead {
@@ -55,6 +55,7 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
   const [replaceFromColorId, setReplaceFromColorId] = useState<string | null>(null);
   const [replaceToColorId, setReplaceToColorId] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+  const [forceCompact, setForceCompact] = useState(false);
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
   
   const isMobile = useIsMobile();
@@ -66,8 +67,10 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Compact mode when mobile or narrow screen
-  const isCompact = isMobile || windowWidth < 900;
+  // Auto compact mode when mobile or narrow screen
+  const autoCompact = isMobile || windowWidth < 900;
+  // User can also force compact mode manually
+  const isCompact = forceCompact || autoCompact;
 
   // Initialize beads when dialog opens
   useEffect(() => {
@@ -170,6 +173,15 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
           <DialogTitle className="flex items-center justify-between gap-4">
             <span>Række {rowIndex + 1}, Plade {columnIndex + 1}</span>
             <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setForceCompact(!forceCompact)}
+                title={forceCompact ? 'Vis fuld værktøjslinje' : 'Minimer værktøjslinje'}
+                className="h-9 w-9"
+              >
+                {forceCompact ? <PanelLeft className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+              </Button>
               <Button 
                 variant="outline"
                 onClick={handleClose} 
