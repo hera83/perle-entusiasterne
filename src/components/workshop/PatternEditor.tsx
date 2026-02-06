@@ -448,26 +448,45 @@ export const PatternEditor: React.FC = () => {
   const handleSaveAll = async () => {
     if (!patternId) return;
 
+    // Verify session before saving
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      toast({
+        title: 'Session udløbet',
+        description: 'Du er blevet logget ud. Log ind igen for at gemme.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsSaving(true);
     try {
-      // Update all plates
-      for (const plate of plates) {
-        const { error } = await supabase
+      // Batch: Run all plate updates in parallel
+      const updatePromises = plates.map(plate =>
+        supabase
           .from('bead_plates')
           .update({ beads: plate.beads as unknown as Json })
-          .eq('id', plate.id);
+          .eq('id', plate.id)
+      );
 
-        if (error) throw error;
+      const results = await Promise.all(updatePromises);
+      
+      // Check for errors
+      const errors = results.filter(r => r.error);
+      if (errors.length > 0) {
+        throw errors[0].error;
       }
 
       // Generate thumbnail and update pattern metadata
       const totalBeads = plates.reduce((sum, plate) => sum + plate.beads.length, 0);
       const thumbnail = generateThumbnail();
 
-      await supabase
+      const { error: metaError } = await supabase
         .from('bead_patterns')
         .update({ total_beads: totalBeads, thumbnail })
         .eq('id', patternId);
+
+      if (metaError) throw metaError;
 
       setHasUnsavedChanges(false);
       toast({
@@ -479,7 +498,7 @@ export const PatternEditor: React.FC = () => {
       console.error('Error saving:', error);
       toast({
         title: 'Fejl',
-        description: 'Kunne ikke gemme ændringer.',
+        description: 'Kunne ikke gemme ændringer. Prøv at logge ind igen.',
         variant: 'destructive',
       });
     } finally {

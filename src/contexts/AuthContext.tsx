@@ -57,8 +57,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       (event, session) => {
         if (!isMounted) return;
 
-        // CRITICAL: Ignore TOKEN_REFRESHED and INITIAL_SESSION - they don't change who the user is
-        if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') return;
+      // TOKEN_REFRESHED: update session state to keep React in sync, but don't touch user/isAdmin
+      if (event === 'TOKEN_REFRESHED') {
+        if (session) {
+          setSession(session);
+        }
+        return;
+      }
+
+      // INITIAL_SESSION is handled by initializeAuth below
+      if (event === 'INITIAL_SESSION') return;
 
         if (event === 'SIGNED_OUT') {
           currentUserIdRef.current = null;
