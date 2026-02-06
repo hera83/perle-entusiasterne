@@ -28,12 +28,6 @@ export const Login: React.FC = () => {
   const [showFirstAdmin, setShowFirstAdmin] = useState(false);
   const [checkingUsers, setCheckingUsers] = useState(true);
 
-  // Redirect if already logged in (only after auth is fully loaded)
-  if (user && !authLoading) {
-    navigate('/');
-    return null;
-  }
-
   // Check if there are any users using RPC function (bypasses RLS)
   useEffect(() => {
     const checkForUsers = async () => {
@@ -52,6 +46,12 @@ export const Login: React.FC = () => {
 
     checkForUsers();
   }, []);
+
+  // Redirect if already logged in (only after auth is fully loaded)
+  if (user && !authLoading) {
+    navigate('/');
+    return null;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
