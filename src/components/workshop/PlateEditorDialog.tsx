@@ -55,6 +55,7 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
   const [replaceFromColorId, setReplaceFromColorId] = useState<string | null>(null);
   const [replaceToColorId, setReplaceToColorId] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+  const [forceCompact, setForceCompact] = useState(false);
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
   
   const isMobile = useIsMobile();
@@ -66,8 +67,10 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Compact mode when mobile or narrow screen
-  const isCompact = isMobile || windowWidth < 900;
+  // Auto compact mode when mobile or narrow screen
+  const autoCompact = isMobile || windowWidth < 900;
+  // User can also force compact mode manually
+  const isCompact = forceCompact || autoCompact;
 
   // Initialize beads when dialog opens
   useEffect(() => {
