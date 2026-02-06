@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import { Layout } from '@/components/layout/Layout';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, Wrench } from 'lucide-react';
@@ -7,10 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Upload, Plus, Palette } from 'lucide-react';
 import { ColorManagementDialog } from '@/components/workshop/ColorManagementDialog';
+import { CreatePatternDialog } from '@/components/workshop/CreatePatternDialog';
+import { PatternEditor } from '@/components/workshop/PatternEditor';
 
 export const Workshop: React.FC = () => {
   const { user, loading } = useAuth();
+  const { patternId } = useParams<{ patternId: string }>();
   const [colorDialogOpen, setColorDialogOpen] = useState(false);
+  const [createPatternDialogOpen, setCreatePatternDialogOpen] = useState(false);
 
   if (loading) {
     return (
@@ -24,6 +28,11 @@ export const Workshop: React.FC = () => {
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // If we have a patternId, show the editor
+  if (patternId) {
+    return <PatternEditor />;
   }
 
   return (
@@ -72,13 +81,13 @@ export const Workshop: React.FC = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Button className="w-full" disabled>
+              <Button 
+                className="w-full"
+                onClick={() => setCreatePatternDialogOpen(true)}
+              >
                 <Plus className="h-4 w-4 mr-2" />
                 Opret ny
               </Button>
-              <p className="text-xs text-muted-foreground mt-2 text-center">
-                Kommer snart
-              </p>
             </CardContent>
           </Card>
 
@@ -127,6 +136,11 @@ export const Workshop: React.FC = () => {
         <ColorManagementDialog 
           open={colorDialogOpen} 
           onOpenChange={setColorDialogOpen} 
+        />
+
+        <CreatePatternDialog
+          open={createPatternDialogOpen}
+          onOpenChange={setCreatePatternDialogOpen}
         />
       </div>
     </Layout>
