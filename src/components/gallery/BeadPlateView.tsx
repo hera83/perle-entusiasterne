@@ -33,7 +33,7 @@ const isLightColor = (hex: string): boolean => {
   return luminance > 0.5;
 };
 
-export const BeadPlateView: React.FC<BeadPlateViewProps> = ({ beads, colors, dimension }) => {
+export const BeadPlateView: React.FC<BeadPlateViewProps> = ({ beads, colors, dimension, containerSize }) => {
   // Create a 2D grid from beads array
   const grid: (Bead | null)[][] = Array.from({ length: dimension }, () =>
     Array.from({ length: dimension }, () => null)
