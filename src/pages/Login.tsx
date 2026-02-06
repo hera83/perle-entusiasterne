@@ -47,18 +47,9 @@ export const Login: React.FC = () => {
     checkForUsers();
   }, []);
 
-  const [redirecting, setRedirecting] = useState(false);
-
-  // Redirect if already logged in (only after auth is fully loaded)
-  useEffect(() => {
-    if (user && !authLoading) {
-      setRedirecting(true);
-      navigate('/');
-    }
-  }, [user, authLoading, navigate]);
-
-  if (redirecting) {
-    return null;
+  // Redirect if already logged in (simple render check, no useEffect race)
+  if (user && !authLoading) {
+    return <Navigate to="/" replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
