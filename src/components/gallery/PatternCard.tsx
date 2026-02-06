@@ -36,6 +36,7 @@ interface Pattern {
   plate_dimension: number;
   total_beads: number;
   is_public?: boolean;
+  thumbnail?: string | null;
 }
 
 interface PatternCardProps {
@@ -204,7 +205,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
         <div className="grid grid-cols-2 gap-4">
           {/* Preview */}
           <div className="aspect-square bg-muted rounded-md overflow-hidden">
-            <PatternPreview patternId={pattern.id} />
+            <PatternPreview thumbnail={pattern.thumbnail} />
           </div>
 
           {/* Metadata */}

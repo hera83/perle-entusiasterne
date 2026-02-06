@@ -21,6 +21,7 @@ interface Pattern {
   plate_dimension: number;
   total_beads: number;
   is_public: boolean;
+  thumbnail: string | null;
 }
 
 export const Gallery: React.FC = () => {
@@ -49,6 +50,7 @@ export const Gallery: React.FC = () => {
           plate_dimension,
           total_beads,
           is_public,
+          thumbnail,
           categories(name),
           profiles(display_name)
         `)
@@ -91,6 +93,7 @@ export const Gallery: React.FC = () => {
         plate_dimension: p.plate_dimension,
         total_beads: p.total_beads,
         is_public: p.is_public,
+        thumbnail: p.thumbnail || null,
       }));
 
       setPatterns(mappedPatterns);

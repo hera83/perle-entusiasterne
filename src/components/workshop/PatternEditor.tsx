@@ -401,6 +401,49 @@ export const PatternEditor: React.FC = () => {
     }
   };
 
+  // Generate thumbnail from current plates
+  const generateThumbnail = (): string | null => {
+    if (!pattern) return null;
+    try {
+      const canvas = document.createElement('canvas');
+      const maxSize = 200;
+      const totalWidth = pattern.plate_width * pattern.plate_dimension;
+      const totalHeight = pattern.plate_height * pattern.plate_dimension;
+      const scale = Math.min(maxSize / totalWidth, maxSize / totalHeight);
+
+      canvas.width = Math.ceil(totalWidth * scale);
+      canvas.height = Math.ceil(totalHeight * scale);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+
+      ctx.fillStyle = '#f5f5f5';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      plates.forEach(plate => {
+        const offsetX = plate.column_index * pattern.plate_dimension * scale;
+        const offsetY = plate.row_index * pattern.plate_dimension * scale;
+
+        plate.beads.forEach(bead => {
+          if (bead.colorId) {
+            const color = colorMap.get(bead.colorId);
+            ctx.fillStyle = color?.hex_color || '#ccc';
+            ctx.fillRect(
+              offsetX + bead.col * scale,
+              offsetY + bead.row * scale,
+              Math.max(scale, 1),
+              Math.max(scale, 1)
+            );
+          }
+        });
+      });
+
+      return canvas.toDataURL('image/png', 0.8);
+    } catch (err) {
+      console.error('Error generating thumbnail:', err);
+      return null;
+    }
+  };
+
   // Save all changes
   const handleSaveAll = async () => {
     if (!patternId) return;
@@ -417,11 +460,13 @@ export const PatternEditor: React.FC = () => {
         if (error) throw error;
       }
 
-      // Update total beads count
+      // Generate thumbnail and update pattern metadata
       const totalBeads = plates.reduce((sum, plate) => sum + plate.beads.length, 0);
+      const thumbnail = generateThumbnail();
+
       await supabase
         .from('bead_patterns')
-        .update({ total_beads: totalBeads })
+        .update({ total_beads: totalBeads, thumbnail })
         .eq('id', patternId);
 
       setHasUnsavedChanges(false);
