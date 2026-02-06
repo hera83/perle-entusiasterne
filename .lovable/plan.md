@@ -1,223 +1,180 @@
 
-# Plan: Galleri Forbedringer og Fejlrettelser
 
-## Overblik
-Implementerer 7 forbedringer: slet-knap for admins, fix preview-billeder, bedre dialog-layout, progress-tracking fix, maks 3 nyeste på forsiden, interaktiv søgning, og privat/offentlig badge.
+# Plan: Tilføj Admin-rolle og Generer Preview-thumbnails
 
----
-
-## Problem 1: Slet-knap for Administratorer
-
-### Nuværende situation
-`PatternCard.tsx` har allerede en slet-knap (`canDelete = isAdmin`), men den vises kun i card-footeren. Knappen eksisterer og virker.
-
-### Løsning
-Knappen er allerede implementeret i linje 275-298. Den vises kun for admins. **Ingen ændringer nødvendige** - verificer at du er logget ind som admin.
-
----
-
-## Problem 2: Preview-billeder Viser "Indlæser..."
+## Problem 1: Ingen slet-knap synlig
 
 ### Årsag
-`PatternPreview.tsx` prøver at hente pattern data med `.single()` i linje 27-31. Hvis der er RLS-problemer eller ingen data, forbliver `loading = true` for evigt.
+Tabellen `user_roles` er tom. Din bruger (heine@ramskov.cc) har ingen admin-rolle, derfor er `isAdmin` altid `false`, og slet-knappen skjules.
 
-### Løsning
-1. Tilføj error handling der sætter `loading = false` ved fejl
-2. Vis en fallback/placeholder ved fejl eller manglende data
-3. Tilføj timeout så den ikke hænger for evigt
-
-**Ændringer i PatternPreview.tsx:**
-- Tilføj `error` state
-- Vis fallback-billede ved fejl
-- Sæt `loading = false` i alle tilfælde
-
----
-
-## Problem 3: Luk-ikon i Kollision med Gem-knap i PatternDialog
-
-### Nuværende situation
-`PatternDialog.tsx` bruger standard Dialog X-knappen (automatisk placeret i øverste højre hjørne). Der er ingen eksplicit gem-knap i denne dialog, men X kan kollidere med navigationsknapper.
-
-### Løsning
-1. Tilføj `hideCloseButton` prop til DialogContent
-2. Tilføj eksplicit "Luk" knap ved siden af navigationsknapperne
-3. Layout: `[Titel] [◀ Tilbage] [Position] [Frem ▶] [Luk]`
-
----
-
-## Problem 4: "Marker plade som færdig" Registrerer Ikke
-
-### Årsag
-`saveProgress` funktionen i PatternDialog.tsx bruger `upsert` med `onConflict: 'user_id,pattern_id'`. Dette ser korrekt ud, og der ER en unik constraint på disse kolonner. 
-
-Problemet kan være:
-1. RLS-politik tillader muligvis ikke INSERT/UPDATE
-2. Frontend-state opdateres ikke korrekt
-
-### Løsning
-1. Tjek at RLS tillader INSERT/UPDATE for egen bruger (der ER policies der tillader dette)
-2. Tilføj bedre error logging i `saveProgress`
-3. Tilføj success/error toast beskeder
-4. Refetch progress efter gem for at bekræfte det virker
-
-**Ændringer i PatternDialog.tsx:**
-- Tilføj error handling til `togglePlateComplete`
-- Vis toast ved fejl
-- Trigger callback til parent for at opdatere PatternCard
-
----
-
-## Problem 5: Maks 3 Nyeste Opskrifter på Forsiden
-
-### Nuværende situation
-`Gallery.tsx` linje 76: `.limit(hasSearched ? 50 : 6)` - viser 6 på forsiden.
-
-### Løsning
-Ændr `6` til `3`:
-```typescript
-.limit(hasSearched ? 50 : 3)
+### Losning
+Tilføj admin-rollen via en database-migration:
+```sql
+INSERT INTO public.user_roles (user_id, role)
+VALUES ('e9253e57-d54a-4ad4-96ca-155162ce787f', 'admin');
 ```
 
 ---
 
-## Problem 6: Interaktiv Søgning (Uden Søg-knap)
+## Problem 2: Ingen preview-billeder i galleriet
 
-### Nuværende situation
-`SearchBar.tsx` har en form med submit-knap. Søgning sker kun ved klik eller Enter.
+### Årsag
+Der findes ingen gemt thumbnail. `PatternPreview` prøver at generere et canvas-billede dynamisk, men det fungerer ikke pålideligt. Der mangler en mekanisme til at generere og gemme et thumbnail når man trykker "Gem alt".
 
-### Løsning
-1. Fjern søg-knappen
-2. Tilføj debounce på onChange der kalder `onSearch`
-3. Brug `useEffect` med 300ms delay for at undgå for mange kald
+### Losning
+1. Tilføj en `thumbnail` kolonne i `bead_patterns` tabellen (text, til base64 data-URL)
+2. Generer et canvas-thumbnail i `PatternEditor.tsx` under "Gem alt"
+3. Opdater `PatternPreview.tsx` til at vise det gemte thumbnail i stedet for dynamisk generering
 
-**Nyt flow:**
-- Bruger skriver → 300ms pause → søgning starter automatisk
-
----
-
-## Problem 7: Privat/Offentlig Badge i PatternCard
-
-### Nuværende situation
-`PatternCard.tsx` viser allerede "Privat" badge (linje 179-183). Men du vil have det vist sammen med dato.
-
-### Løsning
-Flyt visningen op i metadata-sektionen, før oprettelsesdato:
-```tsx
-{/* Privat/Offentlig status */}
-<div className="flex items-center gap-2 text-muted-foreground">
-  {pattern.is_public ? (
-    <>
-      <Globe className="h-4 w-4" />
-      <span>Offentlig</span>
-    </>
-  ) : (
-    <>
-      <Lock className="h-4 w-4" />
-      <span>Privat</span>
-    </>
-  )}
-</div>
-{/* Derefter dato */}
-<div className="flex items-center gap-2 text-muted-foreground">
-  <Calendar ... />
-</div>
+### Database-aendring
+```sql
+ALTER TABLE public.bead_patterns
+ADD COLUMN thumbnail text;
 ```
 
+### Thumbnail-generering i PatternEditor (handleSaveAll)
+Tilføj en funktion der:
+1. Opretter et offscreen canvas (200x200 pixels)
+2. Tegner alle pladers perler med korrekte farver
+3. Eksporterer til base64 PNG (`canvas.toDataURL('image/png', 0.8)`)
+4. Gemmer resultatet i `bead_patterns.thumbnail`
+
+```text
++-------------------+
+|  Gem alt klikket   |
++-------------------+
+        |
+        v
++-------------------+
+| Gem plader (beads) |
++-------------------+
+        |
+        v
++----------------------------+
+| Generer thumbnail canvas   |
+| (200x200 px, alle plader)  |
++----------------------------+
+        |
+        v
++----------------------------+
+| Konverter til base64 PNG   |
++----------------------------+
+        |
+        v
++----------------------------+
+| Gem thumbnail + total_beads |
+| i bead_patterns             |
++----------------------------+
+```
+
+### Opdateret PatternPreview
+Forenklet komponent der:
+- Viser det gemte thumbnail som et `<img>` tag
+- Hvis intet thumbnail: viser "Ingen preview" med et ikon
+- Ingen dynamisk canvas-generering meer (fjerner 3 ekstra API-kald per kort)
+
 ---
 
-## Fil-ændringer
+## Fil-aendringer
 
-| Fil | Ændring |
+| Fil | AEndring |
 |-----|---------|
-| `PatternPreview.tsx` | Error handling, fallback-billede |
-| `PatternDialog.tsx` | Eksplicit luk-knap, bedre error handling for progress |
-| `Gallery.tsx` | Ændr limit fra 6 til 3 |
-| `SearchBar.tsx` | Fjern søg-knap, tilføj debounced onChange |
-| `PatternCard.tsx` | Flyt Privat/Offentlig til metadata-sektion |
+| Database migration | Tilføj admin-rolle + thumbnail kolonne |
+| `PatternEditor.tsx` | Generer og gem thumbnail ved "Gem alt" |
+| `PatternPreview.tsx` | Vis gemt thumbnail (img tag) i stedet for dynamisk canvas |
 
 ---
 
 ## Tekniske detaljer
 
-### Debounced Søgning
+### Thumbnail-generator funktion
 ```typescript
-const [query, setQuery] = useState(initialValue);
-
-useEffect(() => {
-  const timer = setTimeout(() => {
-    onSearch(query);
-  }, 300);
-  return () => clearTimeout(timer);
-}, [query]);
-```
-
-### PatternDialog Luk-knap
-```tsx
-<DialogContent hideCloseButton className="...">
-  <DialogHeader>
-    <div className="flex items-center justify-between">
-      <DialogTitle>...</DialogTitle>
-      <div className="flex items-center gap-2">
-        {/* Navigation */}
-        <Button variant="outline" onClick={() => onOpenChange(false)}>
-          Luk
-        </Button>
-      </div>
-    </div>
-  </DialogHeader>
-</DialogContent>
-```
-
-### Progress Error Handling
-```typescript
-const togglePlateComplete = async () => {
-  // ... existing logic ...
+const generateThumbnail = (): string | null => {
+  const canvas = document.createElement('canvas');
+  const maxSize = 200;
+  const totalWidth = pattern.plate_width * pattern.plate_dimension;
+  const totalHeight = pattern.plate_height * pattern.plate_dimension;
+  const scale = Math.min(maxSize / totalWidth, maxSize / totalHeight);
   
-  setCompletedPlates(newCompleted);
-  const result = await saveProgress(newCompleted, currentPosition);
+  canvas.width = Math.ceil(totalWidth * scale);
+  canvas.height = Math.ceil(totalHeight * scale);
+  const ctx = canvas.getContext('2d');
   
-  if (result.error) {
-    toast.error('Kunne ikke gemme progress');
-    // Rollback
-    setCompletedPlates(isCompleted ? [...completedPlates, key] : completedPlates.filter(k => k !== key));
-  } else {
-    toast.success(isCompleted ? 'Markering fjernet' : 'Plade markeret som færdig');
-  }
+  // Baggrund
+  ctx.fillStyle = '#f5f5f5';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Tegn alle plader
+  plates.forEach(plate => {
+    const offsetX = plate.column_index * pattern.plate_dimension * scale;
+    const offsetY = plate.row_index * pattern.plate_dimension * scale;
+    
+    plate.beads.forEach(bead => {
+      if (bead.colorId) {
+        const color = colorMap.get(bead.colorId);
+        ctx.fillStyle = color?.hex_color || '#ccc';
+        ctx.fillRect(
+          offsetX + bead.col * scale,
+          offsetY + bead.row * scale,
+          Math.max(scale, 1),
+          Math.max(scale, 1)
+        );
+      }
+    });
+  });
+  
+  return canvas.toDataURL('image/png', 0.8);
 };
 ```
+
+### Forenklet PatternPreview
+```typescript
+export const PatternPreview = ({ patternId, thumbnail }) => {
+  if (!thumbnail) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-muted">
+        <ImageOff className="h-8 w-8" />
+        <span className="text-xs">Ingen preview</span>
+      </div>
+    );
+  }
+  
+  return (
+    <img 
+      src={thumbnail} 
+      alt="Pattern preview" 
+      className="w-full h-full object-contain"
+    />
+  );
+};
+```
+
+### PatternCard opdatering
+PatternCard skal videregive thumbnail til PatternPreview:
+- Tilfoej `thumbnail` til Pattern interface
+- Hent `thumbnail` i Gallery.tsx query
+- Send som prop: `<PatternPreview thumbnail={pattern.thumbnail} />`
 
 ---
 
 ## Visuelt resultat
 
-### PatternCard med status
+### Galleri med thumbnails
 ```
 +----------------------------+
-| Min opskrift        [🔒] ♥ |
+| Test plade          [🔒] ♥ |
 | [Kategori]                 |
 +----------------------------+
-|  [Preview]  | 🔒 Privat    |
-|             | 📅 6. feb    |
-|             | 👤 Mig       |
-|             | ▢ 2x2 plader |
-|             | # 841 perler |
-|             | [Progress]   |
+|  [Thumbnail]  | Offentlig  |
+|  (200x200)    | 6. feb     |
+|  gemt som     | Heine      |
+|  base64 PNG   | 2x1 plader |
+|               | 20 perler  |
+|               | [Progress] |
 +----------------------------+
-| [Åben] [Nulstil]    [✏️] [🗑️]|
+| [Åben] [Nulstil]  [✏️] [🗑️]|
 +----------------------------+
 ```
 
-### Søgefelt uden knap
-```
-+------------------------------------------+
-| 🔍 Søg efter perleplade-opskrifter...  X |
-+------------------------------------------+
-  Tip: Søgning starter automatisk
-```
+Slet-knappen (🗑️) vises nu fordi admin-rollen er tildelt.
 
-### PatternDialog med eksplicit luk
-```
-+--------------------------------------------------+
-| Opskrift (Kategori)    [◀] R1,P1 [▶]      [Luk] |
-+--------------------------------------------------+
-```
