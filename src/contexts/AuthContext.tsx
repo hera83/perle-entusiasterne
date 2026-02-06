@@ -57,10 +57,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       (event, session) => {
         if (!isMounted) return;
 
-      // TOKEN_REFRESHED: update session state to keep React in sync, but don't touch user/isAdmin
+      // TOKEN_REFRESHED: update ref silently, no re-render
       if (event === 'TOKEN_REFRESHED') {
         if (session) {
-          setSession(session);
+          sessionRef.current = session;
         }
         return;
       }
@@ -70,7 +70,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (event === 'SIGNED_OUT') {
           currentUserIdRef.current = null;
-          setSession(null);
+          sessionRef.current = null;
           setUser(null);
           setIsAdmin(false);
           return;
@@ -80,7 +80,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Only update state if it's actually a different user
           if (currentUserIdRef.current !== session.user.id) {
             currentUserIdRef.current = session.user.id;
-            setSession(session);
+            sessionRef.current = session;
             setUser(session.user);
             checkAdminRole(session.user.id).then(result => {
               if (isMounted) setIsAdmin(result);
