@@ -1,149 +1,61 @@
 
-# Perle Entusiasterne - Projektplan
+# Plan: Deaktiver Email-bekræftelse + Tilføj Navn-felt
 
-## 🎨 Design & Tema
-- **Titel:** "Perle Entusiasterne" med slogan "Keep it simple"
-- **Tema-skifter:** Lys/mørk mode knap i øverste højre hjørne
-- **Tema gemmes:** I databasen for loggede brugere, i localStorage for gæster
-- **Hjælpetekster:** Input-labels og forklarende tekst på alle funktioner
+## Overblik
+Der skal laves to ændringer:
+1. **Slå email-bekræftelse fra** - så brugere kan logge ind med det samme
+2. **Tilføj "Navn" felt** til login-flowet for første administrator
 
----
+## Ændringer
 
-## 📄 Side 1: Galleri (Hovedside)
-**Tilgængelig for alle**
+### 1. Konfigurer Authentication
+Deaktiver email-bekræftelse i Lovable Cloud, så nye brugere kan logge ind med det samme uden at skulle bekræfte deres email først.
 
-### Søgefunktion
-- Google-stil søgefelt centreret på siden
-- Ved søgning rykker feltet op i toppen
-- Kategori-filter (Disney, Dyr, Diverse osv.)
-- Viser nyeste opskrifter som standard
+### 2. Login-siden (Første Administrator)
+Tilføj et "Navn" felt til formularen for oprettelse af første administrator:
+- Nyt input-felt: **Navn** (f.eks. "Dit fulde navn")
+- Navnet gemmes i `profiles.display_name` når brugeren oprettes
+- Feltet vises kun når der oprettes første administrator
 
-### Navigation
-- **Ikke logget ind:** Login-knap
-- **Bruger:** WorkShop + Logud
-- **Administrator:** Administration + WorkShop + Logud
+### 3. Bruger-administration 
+Bruger-administrationen har allerede et "Navn" felt, så det behøver ikke ændres. Dog skal toast-beskeden opdateres, da den stadig nævner bekræftelses-email.
 
-### Søgeresultat-kort
-- **Header:** Opskrifttitel + Favorit-knap (❤️)
-- **Body:** 
-  - Kolonne 1: Genereret preview-billede af perlepladen
-  - Kolonne 2: Metadata (dato, forfatter, dimensioner, antal perler, progress-bar)
-- **Footer:** 
-  - Alle: Åben, Nulstil
-  - Admin: Rediger, Slet
-
-### Perleplade-popup (Åben)
-- Maksimal størrelse uden scroll
-- Navigation: Frem/Tilbage mellem plader
-- Nummereret perleplade-grid med farvekoder
-- Hover viser farvenavn
-- Checkbox for "færdig med plade" (gemmes i DB eller localStorage)
-- Progress-tracking synkroniseres ved login
-
-### Favoritter
-- Separat favorit-side + filter i galleriet
-- Synkronisering fra localStorage til database ved login
-
-### Print
-- Print-venlig version af perleplade-opskrifter
+### 4. Galleri - "Oprettet af"
+Galleriet henter allerede `creator_name` fra `profiles.display_name` og viser det som "Oprettet af" på hvert kort. Dette fungerer korrekt, da queryen joiner med `profiles(display_name)`.
 
 ---
 
-## 📄 Side 2: Login
-**Kun admin opretter brugere**
+## Tekniske Detaljer
 
-- Felt: Email, adgangskode
-- Første gang: Hjælp til at oprette første admin
-- Redirect til Galleri efter login
+### Fil-ændringer
 
----
+**src/pages/Login.tsx**
+- Tilføj `displayName` state variabel
+- Tilføj nyt input-felt for navn i formularen (kun ved første admin)
+- Ved oprettelse: gem `display_name` i profiles-tabellen efter signup
+- Opdater valideringsschema til at inkludere navn (kun for signup)
+- Fjern tekst om email-bekræftelse fra success-toast
 
-## 📄 Side 3: Administration
-**Kun for administratorer**
+**src/components/admin/UserManagement.tsx**
+- Fjern tekst om bekræftelses-email fra success-toast
+- Formularen har allerede navn-feltet
 
-### Dashboard
-- Antal opskrifter (privat/offentlig)
-- Antal kategorier
-- Statistik over startede/færdige perleplader
-
-### Moduler
-1. **Data-administration:** Import/eksport, nulstil alt data
-2. **Bruger-administration:** Opret, rediger, slet brugere med roller
-3. **Besked-administration:** Popup-beskeder med start/slut-tidspunkt for Galleri
+### Auth-konfiguration
+Brug `configure-auth` værktøjet til at slå email-bekræftelse fra i Lovable Cloud.
 
 ---
 
-## 📄 Side 4: WorkShop
-**For Brugere og Administratorer**
+## Flow efter ændringer
 
-### Oprettelsesmetoder
-1. **Import billede:** 
-   - Upload, fjern baggrund, beskær
-   - Vælg perleplade-dimension (29x29 standard)
-   - Vælg bredde i antal plader (højde beregnes automatisk)
-   - Preview før import
-   
-2. **Ny opskrift:**
-   - Vælg højde og bredde i antal plader
-   - Tilføj/fjern rækker og kolonner undervejs
+### Første Administrator
+1. Bruger åbner login-siden
+2. Systemet opdager ingen brugere → viser "Opret første administrator"
+3. Bruger udfylder: **Navn**, Email, Adgangskode
+4. Bruger trykker "Opret administrator"
+5. Bruger oprettes og logges ind med det samme
+6. Redirect til Galleriet
 
-### Farve-administration (Popup)
-- Tabel med alle tilgængelige farver
-- Tilføj, rediger, slet farver
-- Farvedata: Code, Navn, HEX-farve, Aktiv-status
-- Gem-knap (ingen auto-gem)
-
-### Metadata-input
-- Titel (påkrævet)
-- Kategori (autocomplete fra eksisterende kategorier)
-- Offentlig/Privat toggle
-
-### Redigerings-grid
-- Grafisk perleplade-visning
-- Edit-knap per plade → åbner redigerings-popup
-
-### Redigerings-popup
-- **Header:** Række X, Plade Y + Luk-knap
-- **Body:**
-  - Kolonne 1: Interaktiv perleplade med klik-for-at-farve
-  - Kolonne 2: Værktøjer
-    - Vælg farve (dropdown inkl. slet-farve)
-    - Scan farve (pipette)
-    - Fasthold farve (tegn ved at trække)
-    - Erstat farve (global eller per plade)
-    - Ryd plade
-- **Footer:** Gem-knap
-
-### Gem & Afslut
-- Gem opskrift
-- Spørg om redirect til Galleri
-
----
-
-## 🗃️ Database-struktur
-
-### Tabeller
-1. **profiles** - Brugerinfo
-2. **user_roles** - Roller (admin, user)
-3. **bead_patterns** - Opskrifter med metadata
-4. **bead_plates** - Individuelle plader per opskrift
-5. **bead_colors** - Farvepalette
-6. **categories** - Unikke kategorier
-7. **user_favorites** - Favorit-relationer
-8. **user_progress** - Progress per bruger/opskrift
-9. **announcements** - Admin-beskeder med tidsperiode
-
-### Sikkerhed
-- Row Level Security (RLS) på alle tabeller
-- Admin kan alt, brugere kun egne opskrifter
-- Gæster kan kun læse offentlige opskrifter
-
----
-
-## 🔧 Tekniske detaljer
-- **Backend:** Lovable Cloud (Supabase)
-- **Autentificering:** Email/password via Supabase Auth
-- **Billedbehandling:** Canvas API til preview-generering
-- **LocalStorage:** Synkronisering med database ved login
-- **Responsivt design:** Optimeret til tablet-brug
-
+### Admin opretter ny bruger
+1. Admin går til Administration → Brugere → Opret bruger
+2. Udfylder: Navn, Email, Adgangskode, Rolle
+3. Bruger oprettes og kan logge ind med det samme
