@@ -3,10 +3,10 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from './ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
-import { LogOut, Settings, Wrench, Heart, CircleDot } from 'lucide-react';
+import { LogOut, Settings, Wrench, Heart, CircleDot, Loader2 } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const { user, isAdmin, signOut } = useAuth();
+  const { user, isAdmin, loading, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 

@@ -19,7 +19,7 @@ const loginSchema = z.object({
 
 export const Login: React.FC = () => {
   const navigate = useNavigate();
-  const { user, signIn } = useAuth();
+  const { user, loading: authLoading, signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -28,12 +28,11 @@ export const Login: React.FC = () => {
   const [showFirstAdmin, setShowFirstAdmin] = useState(false);
   const [checkingUsers, setCheckingUsers] = useState(true);
 
-  // Redirect if already logged in
-  useEffect(() => {
-    if (user) {
-      navigate('/');
-    }
-  }, [user, navigate]);
+  // Redirect if already logged in (only after auth is fully loaded)
+  if (user && !authLoading) {
+    navigate('/');
+    return null;
+  }
 
   // Check if there are any users using RPC function (bypasses RLS)
   useEffect(() => {
