@@ -304,6 +304,7 @@ export type Database = {
     }
     Functions: {
       get_pattern_owner: { Args: { _pattern_id: string }; Returns: string }
+      has_any_users: { Args: never; Returns: boolean }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
