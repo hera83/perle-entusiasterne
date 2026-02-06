@@ -1,229 +1,281 @@
 
 
-# Fix: Session-tab ved gemning - den RIGTIGE root cause (med bevis)
+# Fix: Token-refresh loop - helt ny tilgang
 
-## Beviset fra auth-loggen
+## Problemet (nu med bevis fra network-loggen)
 
-Auth-loggen viser praecis hvad der sker:
-
-```text
-14:09:02 - token_revoked (status 200) - refresh #1
-14:09:02 - token_revoked (status 200) - refresh #2
-14:09:02 - token_revoked (status 200) - refresh #3
-14:09:02 - token_revoked (status 200) - refresh #4
-14:09:03 - token_revoked (status 200) - refresh #5
-14:09:03 - 429: Request rate limit reached  <-- HER DOER SESSIONEN
-```
-
-6 token-refresh requests inden for 1 sekund. Supabase's rate limiter slaar til, returnerer 429, og klienten tolker det som "session kompromitteret" og fyrer SIGNED_OUT.
-
-## Hvad udloeser stormen
-
-`handleSaveAll` i PatternEditor kalder `supabase.auth.getUser()` foer gemning. Denne funktion laver et NETVAERKS-kald til `/auth/v1/user`. Hvis JWT-tokenet er taet paa at udloebe, trigger klienten internt et token-refresh FoER getUser-kaldet.
-
-MEN: Supabase-klienten har ogsaa en intern auto-refresh timer der fyrer ~60 sekunder foer token udloeber. Naar BAADE getUser() OG auto-refresh timeren forsoeeger at refreshe paa samme tid, starter en kaede:
+Network-loggen afslorer det EGENTLIGE problem. Det er IKKE concurrent queries der trigger samtidige refreshes. Det er Supabase-klientens interne auto-refresh mekanisme der gaar i LOOP:
 
 ```text
-1. getUser() finder expired token -> trigger refresh med T1 -> faar T2
-2. Auto-refresh timer fyrer -> bruger T2 -> faar T3  
-3. Klienten ser nyt token -> trigger refresh igen -> T3 -> T4
-4. Kaede fortsaetter: T4 -> T5 -> T5 -> ...
-5. Rate limit (429) -> SIGNED_OUT
+15:23:44 - Login (password) -> refresh_token: vr3j4ghnmexh
+15:23:44 - Refresh #1: vr3j4ghnmexh -> 2emwpcnm277d
+15:23:44 - Refresh #2: 2emwpcnm277d -> eeglqvubjau3
+15:23:44 - Refresh #3: eeglqvubjau3 -> u4xonkldtxsm
+15:23:44 - Refresh #4: u4xonkldtxsm -> v4z6r5qah4em
+15:23:44 - Refresh #5: v4z6r5qah4em -> uks6xevlk3oq
+15:23:44 - Refresh #6: uks6xevlk3oq -> zdus7ualzrwe
+15:23:44 - Refresh #7: zdus7ualzrwe -> ...
+                         ... indtil 429 rate limit
 ```
 
-Derefter: AuthContext saetter user=null, isAdmin=false. Administration-siden ser `!user || !isAdmin` og redirecter til "/". Galleriet loader og fyrer flere queries (som ogsaa kan trigger yderligere refreshes).
+Hvert refresh KAeDER det naeste. Tokenet er helt nyt (1 times gyldighed), saa det er IKKE udloebet. Supabase-klientens `autoRefreshToken` mekanisme korer i en loop - den trigger et refresh, som trigger et nyt refresh, osv.
 
-## Den EGENTLIGE fejl
+## Hvorfor alle tidligere fixes ikke virkede
 
-**`supabase.auth.getUser()` er et netvaerks-kald der racer med Supabase-klientens interne auto-refresh.** Det var tilfojet som "server-side validering", men det er praecis det der udloeser token-stormen.
+Vi har proevet at:
+- Fjerne re-renders ved TOKEN_REFRESHED (hjaelper ikke - loopet er internt i klienten)
+- Serialisere database-queries (hjaelper ikke - det er ikke queries der trigger det)
+- Erstatte getUser() med getSession() (hjaelper ikke - det er auto-refresh timeren)
+- Tilfoeje delays mellem queries (hjaelper ikke - loopet starter uafhaengigt af vores kode)
 
-`supabase.auth.getSession()` laeser derimod fra LOCAL CACHE - ingen netvaerkskald, ingen token-refresh, ingen race condition.
+INGEN af disse fixes adresserer det faktiske problem: **Supabase-klientens interne auto-refresh timer gaar i loop.**
 
-## Loesning (4 filer)
+## Den nye loesning: Stop auto-refresh, styr det manuelt
 
-### 1. PatternEditor.tsx - Erstat getUser() med getSession()
+Supabase-klienten har en offentlig metode: `supabase.auth.stopAutoRefresh()`. Vi kan stoppe den interne (buggy) auto-refresh og implementere vores EGEN kontrollerede refresh-timer.
 
-**Problem**: `getUser()` paa linje 452-453 laver et auth-netvaerkskald der racer med auto-refresh.
+Vi kan ikke redigere `client.ts` (auto-genereret), men vi kan kalde `stopAutoRefresh()` ved runtime i AuthContext.
 
-**Fix**: 
-- Erstat `getUser()` med `getSession()` (cached, ingen netvaerkskald)
-- Tjek `session.expires_at` for at sikre tokenet ikke er udloebet
-- Hvis tokenet udloeber inden for 60 sekunder, vis en fejlbesked
-- Ingen aendring i resten af gem-logikken (sekventielle saves er fine)
+### Hvad loesningen goer:
 
-### 2. PatternDialog.tsx - Erstat getUser() med getSession()
-
-**Problem**: `getUser()` paa linje 155 har praecis det samme problem.
-
-**Fix**: Samme aendring - erstat med `getSession()` og tjek `expires_at`.
-
-### 3. AdminDashboard.tsx - Serialiser COUNT queries
-
-**Problem**: `fetchStats()` fyrer 6 COUNT queries parallelt (bead_patterns x3, categories, profiles, user_progress). Naar Administration loader efter en side-navigation, kan disse 6 samtidige requests trigge samtidige token-refreshes.
-
-**Fix**: 
-- Koer queries sekventielt i stedet for parallelt
-- Tilfoej 50ms pause mellem hvert kald
-
-### 4. UserManagement.tsx - Serialiser rolle-hentning
-
-**Problem**: `fetchUsers()` bruger `Promise.all` til at hente roller for ALLE brugere parallelt. Med N brugere = N samtidige requests.
-
-**Fix**: 
-- Hent alle roller i EN enkelt query i stedet for N individuelle
-- Kombiner med profiles-data lokalt
+1. **Stopper den interne auto-refresh** der looper
+2. **Implementerer en kontrolleret refresh-timer** der fyrer PRGCIS een gang, 5 minutter foer tokenet udloeber
+3. **Opretter en database-funktion** til admin-statistikker (1 query i stedet for 6)
+4. **Fjerner alle manuelle auth-checks** foer gem-operationer
 
 ## Filer der aendres
 
 | Fil | Aendring |
 |-----|----------|
-| `src/components/workshop/PatternEditor.tsx` | Erstat getUser() med getSession() + expires_at tjek |
-| `src/components/gallery/PatternDialog.tsx` | Erstat getUser() med getSession() + expires_at tjek |
-| `src/components/admin/AdminDashboard.tsx` | Serialiser 6 COUNT queries |
-| `src/components/admin/UserManagement.tsx` | Hent roller i 1 query i stedet for N |
+| `src/contexts/AuthContext.tsx` | Stop auto-refresh, implementer kontrolleret refresh-timer |
+| `src/components/workshop/PatternEditor.tsx` | Fjern getSession/refreshSession check, bare gem direkte |
+| `src/components/gallery/PatternDialog.tsx` | Fjern getSession check |
+| `src/components/admin/AdminDashboard.tsx` | Brug ny RPC-funktion i stedet for 6 queries |
+
+Plus en ny database-migration til RPC-funktionen.
 
 ## Tekniske detaljer
 
-### PatternEditor.tsx - handleSaveAll (linje 448-516)
+### AuthContext.tsx - Kontrolleret token-refresh
+
+Kerneideen: vi stopper Supabase-klientens auto-refresh og styrer det selv.
 
 ```text
-// FOER (linje 451-462):
-const { data: { user: currentUser }, error: userError } =
-  await supabase.auth.getUser();  // <-- NETVAERKSKALD! Trigger token refresh!
+// Ved opstart:
+supabase.auth.stopAutoRefresh();
 
-if (userError || !currentUser) { ... }
+// Vores egen refresh-timer:
+const refreshTimerRef = useRef<number | null>(null);
 
-// EFTER:
-const { data: { session } } = await supabase.auth.getSession();  // <-- LOCAL CACHE!
-
-if (!session) {
-  toast({
-    title: 'Session udloebet',
-    description: 'Du er blevet logget ud. Log ind igen for at gemme.',
-    variant: 'destructive',
-  });
-  return;
-}
-
-// Tjek om token udloeber inden for 60 sekunder
-const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
-const now = Date.now();
-if (expiresAt > 0 && expiresAt - now < 60000) {
-  // Token er ved at udloebe - proev at refreshe EN gang
-  const { error: refreshError } = await supabase.auth.refreshSession();
-  if (refreshError) {
-    toast({
-      title: 'Session udloebet',
-      description: 'Din session er udloebet. Log ind igen.',
-      variant: 'destructive',
-    });
-    return;
+const scheduleRefresh = (session: Session) => {
+  // Ryd eksisterende timer
+  if (refreshTimerRef.current) {
+    clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = null;
   }
+
+  // Beregn hvornaar tokenet udloeber
+  const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
+  if (expiresAt === 0) return;
+
+  // Refresh 5 minutter foer udloeb (minimum 30 sekunder)
+  const refreshIn = Math.max(expiresAt - Date.now() - 5 * 60 * 1000, 30000);
+
+  refreshTimerRef.current = window.setTimeout(async () => {
+    const { data, error } = await supabase.auth.refreshSession();
+    if (!error && data.session) {
+      // Planlaeg naeste refresh med det nye token
+      scheduleRefresh(data.session);
+    }
+    // Hvis refresh fejler: auto-refresh var allerede stoppet,
+    // brugeren vil se "session udloebet" naeste gang de proever noget
+  }, refreshIn);
+};
+
+// I onAuthStateChange:
+if (event === 'SIGNED_IN' && session) {
+  scheduleRefresh(session);
 }
 
-// Resten af handleSaveAll forbliver uaendret (sekventielle saves)
+if (event === 'TOKEN_REFRESHED' && session) {
+  sessionRef.current = session;
+  scheduleRefresh(session);  // Nulstil timer med nyt token
+  return; // Ingen re-render
+}
+
+if (event === 'SIGNED_OUT') {
+  if (refreshTimerRef.current) {
+    clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = null;
+  }
+  // ... reset state
+}
+
+// I initializeAuth:
+const { data: { session } } = await supabase.auth.getSession();
+if (session) {
+  scheduleRefresh(session);
+}
+
+// I cleanup:
+return () => {
+  isMounted = false;
+  subscription.unsubscribe();
+  if (refreshTimerRef.current) {
+    clearTimeout(refreshTimerRef.current);
+  }
+};
 ```
 
-### PatternDialog.tsx - saveProgress (linje 150-187)
+### PatternEditor.tsx - Fjern auth-checks foer gem
+
+Alle manuelle `getSession()` og `refreshSession()` kald fjernes. Vi stoler paa at Supabase-klienten har et gyldigt token (fordi vi styrer refresh selv), og haandterer fejl hvis den ikke har.
 
 ```text
-// FOER (linje 154-159):
-const { data: { user: currentUser }, error: userError } = 
-  await supabase.auth.getUser();
-if (userError || !currentUser) {
-  toast.error('Session udloebet...');
-  return { error: new Error('Session expired') };
-}
+// FOER (linje 448-475):
+const handleSaveAll = async () => {
+  if (!patternId) return;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) { ... }
+  const expiresAt = session.expires_at ? ...;
+  if (expiresAt ...) {
+    const { error } = await supabase.auth.refreshSession();
+    ...
+  }
+  // ... gem logik
+};
 
 // EFTER:
-const { data: { session } } = await supabase.auth.getSession();
-if (!session) {
-  toast.error('Session udloebet - log ind igen for at gemme progress');
-  return { error: new Error('Session expired') };
+const handleSaveAll = async () => {
+  if (!patternId) return;
+
+  setIsSaving(true);
+  try {
+    // Gem direkte - ingen auth-check noedvendig
+    // Vores kontrollerede refresh-timer holder tokenet gyldigt
+    for (const plate of plates) {
+      const { error } = await supabase
+        .from('bead_plates')
+        .update({ beads: plate.beads as unknown as Json })
+        .eq('id', plate.id);
+
+      if (error) {
+        if (error.message?.includes('JWT') || error.code === 'PGRST301') {
+          throw new Error('SESSION_EXPIRED');
+        }
+        throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+
+    // Thumbnail + metadata...
+    setHasUnsavedChanges(false);
+    toast({ title: 'Gemt', description: 'Alle aendringer er gemt.' });
+  } catch (error) {
+    // ... fejlhaandtering
+  } finally {
+    setIsSaving(false);
+  }
+};
+```
+
+### PatternDialog.tsx - Fjern getSession check
+
+```text
+// FOER:
+const saveProgress = async (...) => {
+  if (user) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { ... }
+    // ... gem
+  }
+};
+
+// EFTER:
+const saveProgress = async (...) => {
+  if (user) {
+    // Gem direkte - ingen session-check
+    const { error } = await supabase
+      .from('user_progress')
+      .upsert({ ... });
+
+    if (error) {
+      console.error('Error saving progress:', error);
+      return { error };
+    }
+  }
+  // ...
+};
+```
+
+### Database migration - RPC funktion for admin stats
+
+Opretter en enkelt database-funktion der returnerer alle admin-statistikker i eet kald:
+
+```sql
+CREATE OR REPLACE FUNCTION get_admin_stats()
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  result JSON;
+BEGIN
+  -- Kun admins maa kalde denne
+  IF NOT is_admin(auth.uid()) THEN
+    RAISE EXCEPTION 'Not authorized';
+  END IF;
+
+  SELECT json_build_object(
+    'total_patterns', (SELECT count(*) FROM bead_patterns),
+    'public_patterns', (SELECT count(*) FROM bead_patterns WHERE is_public = true),
+    'private_patterns', (SELECT count(*) FROM bead_patterns WHERE is_public = false),
+    'total_categories', (SELECT count(*) FROM categories),
+    'total_users', (SELECT count(*) FROM profiles),
+    'started_patterns', (SELECT count(*) FROM user_progress)
+  ) INTO result;
+
+  RETURN result;
+END;
+$$;
+```
+
+### AdminDashboard.tsx - Brug RPC
+
+```text
+// FOER: 6 separate COUNT queries med delays
+const { count: totalPatterns } = await supabase.from('bead_patterns')...
+await new Promise(r => setTimeout(r, 50));
+const { count: publicPatterns } = await supabase.from('bead_patterns')...
+// ... 6 queries total
+
+// EFTER: 1 enkelt kald
+const { data, error } = await supabase.rpc('get_admin_stats');
+
+if (!error && data) {
+  setStats({
+    totalPatterns: data.total_patterns,
+    publicPatterns: data.public_patterns,
+    privatePatterns: data.private_patterns,
+    totalCategories: data.total_categories,
+    totalUsers: data.total_users,
+    startedPatterns: data.started_patterns,
+    completedPatterns: 0,
+  });
 }
-```
-
-### AdminDashboard.tsx - fetchStats (linje 32-81)
-
-```text
-// FOER: 6 parallelle COUNT queries
-const { count: totalPatterns } = await supabase...
-const { count: publicPatterns } = await supabase...
-const { count: privatePatterns } = await supabase...
-const { count: totalCategories } = await supabase...
-const { count: totalUsers } = await supabase...
-const { count: startedPatterns } = await supabase...
-
-// EFTER: Sekventielle queries med pauser
-const { count: totalPatterns } = await supabase
-  .from('bead_patterns').select('*', { count: 'exact', head: true });
-
-const { count: publicPatterns } = await supabase
-  .from('bead_patterns').select('*', { count: 'exact', head: true })
-  .eq('is_public', true);
-
-await new Promise(r => setTimeout(r, 50));
-
-const { count: privatePatterns } = await supabase
-  .from('bead_patterns').select('*', { count: 'exact', head: true })
-  .eq('is_public', false);
-
-const { count: totalCategories } = await supabase
-  .from('categories').select('*', { count: 'exact', head: true });
-
-await new Promise(r => setTimeout(r, 50));
-
-const { count: totalUsers } = await supabase
-  .from('profiles').select('*', { count: 'exact', head: true });
-
-const { count: startedPatterns } = await supabase
-  .from('user_progress').select('*', { count: 'exact', head: true });
-```
-
-### UserManagement.tsx - fetchUsers (linje 73-107)
-
-```text
-// FOER: Promise.all med N individuelle rolle-queries
-const usersWithRoles = await Promise.all(
-  profiles.map(async (profile) => {
-    const { data: roleData } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', profile.user_id)
-      .maybeSingle();
-    return { ...profile, role: roleData?.role || null };
-  })
-);
-
-// EFTER: EN enkelt query der henter ALLE roller
-const { data: profiles } = await supabase
-  .from('profiles')
-  .select('id, user_id, display_name, created_at')
-  .order('created_at', { ascending: false });
-
-// Hent alle roller i en enkelt query
-const userIds = (profiles || []).map(p => p.user_id);
-const { data: allRoles } = await supabase
-  .from('user_roles')
-  .select('user_id, role')
-  .in('user_id', userIds);
-
-// Kombiner lokalt
-const roleMap = new Map(
-  (allRoles || []).map(r => [r.user_id, r.role])
-);
-
-const usersWithRoles = (profiles || []).map(profile => ({
-  ...profile,
-  role: (roleMap.get(profile.user_id) as 'admin' | 'user') || null,
-}));
 ```
 
 ## Forventet resultat
 
-- `getUser()` erstattes med `getSession()` - ingen ekstra netvaerkskald, ingen token-refresh race
-- Gem-operationer bruger det EKSISTERENDE token fra cache (Supabase-klienten haandterer refresh automatisk internt naar det er noedvendigt)
-- Admin-sider laver faerre samtidige requests, hvilket reducerer risikoen for burst
-- Ingen flere 429 rate limit fejl paa token-endpoint
-- Sessionen forbliver stabil efter gemning OG ved navigation til Administration
+- **INGEN auto-refresh loop** - den interne mekanisme er stoppet
+- **PRAECIS 1 refresh per session** - vores timer fyrer 5 min foer udloeb
+- **1 database-kald for admin stats** i stedet for 6
+- **Ingen manuelle auth-checks** der kan race med refresh
+- **Sessionen forbliver stabil** ved navigation, gemning og alt andet
+
+## Hvorfor denne loesning er anderledes
+
+Alle tidligere fixes proevede at reducere ANTALLET af queries for at undgaa at trigge refresh-stormen. Men stormen sker INTERNT i Supabase-klienten, uafhaengigt af vores queries. Den eneste loesning er at STOPPE den interne auto-refresh og styre det selv.
+
+`supabase.auth.stopAutoRefresh()` er en officielt undersoettet metode i Supabase JS v2.
 
