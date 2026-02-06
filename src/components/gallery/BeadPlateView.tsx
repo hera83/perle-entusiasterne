@@ -21,6 +21,7 @@ interface BeadPlateViewProps {
   beads: Bead[];
   colors: Map<string, ColorInfo>;
   dimension: number;
+  containerSize?: { width: number; height: number };
 }
 
 // Determine if a color is light or dark for text contrast
