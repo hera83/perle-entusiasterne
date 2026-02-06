@@ -71,10 +71,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (event === 'INITIAL_SESSION') return;
 
         if (event === 'SIGNED_OUT') {
+          const wasLoggedIn = wasLoggedInRef.current;
+          wasLoggedInRef.current = false;
           currentUserIdRef.current = null;
           sessionRef.current = null;
           setUser(null);
           setIsAdmin(false);
+
+          // Show message only if user didn't sign out voluntarily
+          if (wasLoggedIn) {
+            toast.error('Du er blevet logget ud. Dine seneste ændringer er muligvis ikke gemt.');
+          }
           return;
         }
 
