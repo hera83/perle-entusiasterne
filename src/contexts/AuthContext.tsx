@@ -181,14 +181,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signOut = useCallback(async () => {
-    wasLoggedInRef.current = false; // Prevent "unexpected logout" message
-    // Clear refresh timer before signing out
+    // Ryd ALLE auth-relaterede state DIREKTE - vi stoler ikke på SIGNED_OUT event
+    currentUserIdRef.current = null;
+    sessionRef.current = null;
+    wasLoggedInRef.current = false;
+    setUser(null);
+    setIsAdmin(false);
+
+    // Clear refresh timer
     if (refreshTimerRef.current) {
       clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = null;
     }
-    await supabase.auth.signOut();
+
+    // Kald Supabase signOut (state er allerede ryddet, SIGNED_OUT event ignoreres)
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('Error during signOut:', err);
+    }
+  }, []);
+
+  const verifySession = useCallback(async (): Promise<boolean> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) return true;
+
+    // Session er virkelig væk - ryd state
+    currentUserIdRef.current = null;
+    sessionRef.current = null;
+    setUser(null);
     setIsAdmin(false);
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+    return false;
   }, []);
 
   const contextValue = useMemo(() => ({
