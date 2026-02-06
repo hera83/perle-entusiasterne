@@ -31,46 +31,26 @@ export const AdminDashboard: React.FC = () => {
 
   const fetchStats = async () => {
     try {
-      // Sequential queries with pauses to avoid token refresh storm
-      const { count: totalPatterns } = await supabase
-        .from('bead_patterns')
-        .select('*', { count: 'exact', head: true });
+      // Single RPC call instead of 6 separate queries
+      const { data, error } = await supabase.rpc('get_admin_stats');
 
-      const { count: publicPatterns } = await supabase
-        .from('bead_patterns')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_public', true);
+      if (error) {
+        console.error('Error fetching admin stats:', error);
+        return;
+      }
 
-      await new Promise(r => setTimeout(r, 50));
-
-      const { count: privatePatterns } = await supabase
-        .from('bead_patterns')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_public', false);
-
-      const { count: totalCategories } = await supabase
-        .from('categories')
-        .select('*', { count: 'exact', head: true });
-
-      await new Promise(r => setTimeout(r, 50));
-
-      const { count: totalUsers } = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true });
-
-      const { count: startedPatterns } = await supabase
-        .from('user_progress')
-        .select('*', { count: 'exact', head: true });
-
-      setStats({
-        totalPatterns: totalPatterns || 0,
-        publicPatterns: publicPatterns || 0,
-        privatePatterns: privatePatterns || 0,
-        totalCategories: totalCategories || 0,
-        totalUsers: totalUsers || 0,
-        startedPatterns: startedPatterns || 0,
-        completedPatterns: 0,
-      });
+      if (data) {
+        const statsData = data as Record<string, number>;
+        setStats({
+          totalPatterns: statsData.total_patterns || 0,
+          publicPatterns: statsData.public_patterns || 0,
+          privatePatterns: statsData.private_patterns || 0,
+          totalCategories: statsData.total_categories || 0,
+          totalUsers: statsData.total_users || 0,
+          startedPatterns: statsData.started_patterns || 0,
+          completedPatterns: 0,
+        });
+      }
     } catch (err) {
       console.error('Error fetching stats:', err);
     } finally {
