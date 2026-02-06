@@ -127,6 +127,11 @@ export const Login: React.FC = () => {
     e.preventDefault();
     setError(null);
 
+    if (!displayName.trim()) {
+      setError('Indtast venligst dit navn');
+      return;
+    }
+
     const result = loginSchema.safeParse({ email, password });
     if (!result.success) {
       setError(result.error.errors[0].message);
@@ -143,6 +148,9 @@ export const Login: React.FC = () => {
         password,
         options: {
           emailRedirectTo: redirectUrl,
+          data: {
+            display_name: displayName.trim(),
+          },
         },
       });
 
@@ -152,6 +160,12 @@ export const Login: React.FC = () => {
       }
 
       if (data.user) {
+        // Update display name in profile
+        await supabase
+          .from('profiles')
+          .update({ display_name: displayName.trim() })
+          .eq('user_id', data.user.id);
+
         // Assign admin role to first user
         await supabase
           .from('user_roles')
@@ -160,8 +174,15 @@ export const Login: React.FC = () => {
             role: 'admin',
           });
 
-        toast.success('Administrator-konto oprettet! Tjek din email for at bekræfte.');
-        setShowFirstAdmin(false);
+        toast.success('Administrator-konto oprettet! Du kan nu logge ind.');
+        
+        // Auto sign-in the user
+        const { error: signInError } = await signIn(email, password);
+        if (!signInError) {
+          navigate('/');
+        } else {
+          setShowFirstAdmin(false);
+        }
       }
     } catch (err) {
       setError('Der opstod en uventet fejl');
