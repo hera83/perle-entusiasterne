@@ -763,6 +763,9 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
                 <p className="text-muted-foreground">
                   Billedet skaleres til {plateWidth * plateDimension} × {plateHeight * plateDimension} perler
                 </p>
+                <p className="text-xs text-muted-foreground/70 italic">
+                  Højden er låst til billedets aspektratio ({cropRect.width > 0 ? (cropRect.width / cropRect.height).toFixed(2) : '–'})
+                </p>
               </div>
 
               {/* Public toggle */}
