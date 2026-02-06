@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -26,6 +26,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const currentUserIdRef = useRef<string | null>(null);
 
   const checkAdminRole = async (userId: string): Promise<boolean> => {
     try {
@@ -55,18 +56,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         if (!isMounted) return;
-        setSession(session);
-        setUser(session?.user ?? null);
 
-        if (session?.user) {
-          // Fire-and-forget for ongoing changes
-          setTimeout(async () => {
-            if (!isMounted) return;
-            const adminResult = await checkAdminRole(session.user.id);
-            if (isMounted) setIsAdmin(adminResult);
-          }, 0);
-        } else {
+        // CRITICAL: Ignore TOKEN_REFRESHED and INITIAL_SESSION - they don't change who the user is
+        if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') return;
+
+        if (event === 'SIGNED_OUT') {
+          currentUserIdRef.current = null;
+          setSession(null);
+          setUser(null);
           setIsAdmin(false);
+          return;
+        }
+
+        if (event === 'SIGNED_IN' && session?.user) {
+          // Only update state if it's actually a different user
+          if (currentUserIdRef.current !== session.user.id) {
+            currentUserIdRef.current = session.user.id;
+            setSession(session);
+            setUser(session.user);
+            checkAdminRole(session.user.id).then(result => {
+              if (isMounted) setIsAdmin(result);
+            });
+          }
         }
       }
     );
@@ -79,6 +90,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         setSession(session);
         setUser(session?.user ?? null);
+        currentUserIdRef.current = session?.user?.id ?? null;
 
         if (session?.user) {
           const adminResult = await checkAdminRole(session.user.id);
