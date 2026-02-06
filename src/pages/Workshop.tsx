@@ -123,6 +123,11 @@ export const Workshop: React.FC = () => {
             </li>
           </ol>
         </div>
+
+        <ColorManagementDialog 
+          open={colorDialogOpen} 
+          onOpenChange={setColorDialogOpen} 
+        />
       </div>
     </Layout>
   );
