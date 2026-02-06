@@ -296,7 +296,7 @@ export const AnnouncementManagement: React.FC = () => {
                   </TableCell>
                   <TableCell>
                     {isCurrentlyActive(announcement) ? (
-                      <Badge className="bg-green-500">Aktiv nu</Badge>
+                      <Badge className="bg-success text-success-foreground">Aktiv nu</Badge>
                     ) : announcement.is_active ? (
                       <Badge variant="secondary">Planlagt</Badge>
                     ) : (

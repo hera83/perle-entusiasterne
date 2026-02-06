@@ -139,7 +139,7 @@ export const Favorites: React.FC = () => {
           </div>
         ) : patterns.length === 0 ? (
           <div className="text-center py-12">
-            <Heart className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+            <Heart className="h-16 w-16 mx-auto text-muted-foreground/50 mb-4" />
             <p className="text-muted-foreground text-lg">
               Du har ingen favoritter endnu.
             </p>
