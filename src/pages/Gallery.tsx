@@ -5,6 +5,7 @@ import { PatternCard } from '@/components/gallery/PatternCard';
 import { PatternDialog } from '@/components/gallery/PatternDialog';
 import { CategoryFilter } from '@/components/gallery/CategoryFilter';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 
 interface Pattern {
@@ -23,6 +24,7 @@ interface Pattern {
 }
 
 export const Gallery: React.FC = () => {
+  const { user, isAdmin } = useAuth();
   const [patterns, setPatterns] = useState<Pattern[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -50,8 +52,18 @@ export const Gallery: React.FC = () => {
           categories(name),
           profiles(display_name)
         `)
-        .eq('is_public', true)
         .order('created_at', { ascending: false });
+
+      // Apply visibility filter based on user status
+      if (isAdmin) {
+        // Admins see everything - no filter
+      } else if (user) {
+        // Logged in users see public + their own private patterns
+        request = request.or(`is_public.eq.true,user_id.eq.${user.id}`);
+      } else {
+        // Guests see only public patterns
+        request = request.eq('is_public', true);
+      }
 
       if (query) {
         request = request.ilike('title', `%${query}%`);
@@ -93,7 +105,7 @@ export const Gallery: React.FC = () => {
 
   useEffect(() => {
     fetchPatterns();
-  }, []);
+  }, [user, isAdmin]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);

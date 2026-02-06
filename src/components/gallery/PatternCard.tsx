@@ -3,7 +3,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Heart, Eye, RotateCcw, Pencil, Trash2, Calendar, User, Grid3X3, Hash } from 'lucide-react';
+import { Heart, Eye, RotateCcw, Pencil, Trash2, Calendar, User, Grid3X3, Hash, Lock } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
@@ -35,6 +35,7 @@ interface Pattern {
   plate_height: number;
   plate_dimension: number;
   total_beads: number;
+  is_public?: boolean;
 }
 
 interface PatternCardProps {
@@ -163,12 +164,24 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
-            <CardTitle className="text-lg line-clamp-1">{pattern.title}</CardTitle>
-            {pattern.category_name && (
-              <Badge variant="secondary" className="mt-1">
-                {pattern.category_name}
-              </Badge>
-            )}
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-lg line-clamp-1">{pattern.title}</CardTitle>
+              {pattern.is_public === false && (
+                <Lock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              )}
+            </div>
+            <div className="flex items-center gap-1 mt-1 flex-wrap">
+              {pattern.category_name && (
+                <Badge variant="secondary">
+                  {pattern.category_name}
+                </Badge>
+              )}
+              {pattern.is_public === false && (
+                <Badge variant="outline" className="text-muted-foreground">
+                  Privat
+                </Badge>
+              )}
+            </div>
           </div>
           <Button
             variant="ghost"
