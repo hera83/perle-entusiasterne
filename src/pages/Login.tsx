@@ -22,6 +22,7 @@ export const Login: React.FC = () => {
   const { user, signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showFirstAdmin, setShowFirstAdmin] = useState(false);
@@ -126,6 +127,11 @@ export const Login: React.FC = () => {
     e.preventDefault();
     setError(null);
 
+    if (!displayName.trim()) {
+      setError('Indtast venligst dit navn');
+      return;
+    }
+
     const result = loginSchema.safeParse({ email, password });
     if (!result.success) {
       setError(result.error.errors[0].message);
@@ -142,6 +148,9 @@ export const Login: React.FC = () => {
         password,
         options: {
           emailRedirectTo: redirectUrl,
+          data: {
+            display_name: displayName.trim(),
+          },
         },
       });
 
@@ -151,6 +160,12 @@ export const Login: React.FC = () => {
       }
 
       if (data.user) {
+        // Update display name in profile
+        await supabase
+          .from('profiles')
+          .update({ display_name: displayName.trim() })
+          .eq('user_id', data.user.id);
+
         // Assign admin role to first user
         await supabase
           .from('user_roles')
@@ -159,8 +174,15 @@ export const Login: React.FC = () => {
             role: 'admin',
           });
 
-        toast.success('Administrator-konto oprettet! Tjek din email for at bekræfte.');
-        setShowFirstAdmin(false);
+        toast.success('Administrator-konto oprettet! Du kan nu logge ind.');
+        
+        // Auto sign-in the user
+        const { error: signInError } = await signIn(email, password);
+        if (!signInError) {
+          navigate('/');
+        } else {
+          setShowFirstAdmin(false);
+        }
       }
     } catch (err) {
       setError('Der opstod en uventet fejl');
@@ -213,6 +235,26 @@ export const Login: React.FC = () => {
 
             <form onSubmit={showFirstAdmin ? handleFirstAdminSignup : handleSubmit}>
               <div className="space-y-4">
+                {showFirstAdmin && (
+                  <div className="space-y-2">
+                    <Label htmlFor="displayName">
+                      Navn
+                      <span className="text-muted-foreground text-xs ml-1">
+                        (Dit fulde navn)
+                      </span>
+                    </Label>
+                    <Input
+                      id="displayName"
+                      type="text"
+                      placeholder="Dit navn"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      required
+                      disabled={loading}
+                    />
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="email">
                     Email
