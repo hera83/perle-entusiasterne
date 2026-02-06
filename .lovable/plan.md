@@ -1,180 +1,126 @@
 
+# Importer Billede – WorkShop
 
-# Plan: Tilføj Admin-rolle og Generer Preview-thumbnails
+## Oversigt
+Tilfoej funktionen "Importer billede" i WorkShoppen, saa brugere kan uploade et billede, beskaere det, og faa det konverteret til en perleplade-opskrift. Alt billedbehandling sker i browseren (ingen AI eller server noedvendigt).
 
-## Problem 1: Ingen slet-knap synlig
-
-### Årsag
-Tabellen `user_roles` er tom. Din bruger (heine@ramskov.cc) har ingen admin-rolle, derfor er `isAdmin` altid `false`, og slet-knappen skjules.
-
-### Losning
-Tilføj admin-rollen via en database-migration:
-```sql
-INSERT INTO public.user_roles (user_id, role)
-VALUES ('e9253e57-d54a-4ad4-96ca-155162ce787f', 'admin');
-```
-
----
-
-## Problem 2: Ingen preview-billeder i galleriet
-
-### Årsag
-Der findes ingen gemt thumbnail. `PatternPreview` prøver at generere et canvas-billede dynamisk, men det fungerer ikke pålideligt. Der mangler en mekanisme til at generere og gemme et thumbnail når man trykker "Gem alt".
-
-### Losning
-1. Tilføj en `thumbnail` kolonne i `bead_patterns` tabellen (text, til base64 data-URL)
-2. Generer et canvas-thumbnail i `PatternEditor.tsx` under "Gem alt"
-3. Opdater `PatternPreview.tsx` til at vise det gemte thumbnail i stedet for dynamisk generering
-
-### Database-aendring
-```sql
-ALTER TABLE public.bead_patterns
-ADD COLUMN thumbnail text;
-```
-
-### Thumbnail-generering i PatternEditor (handleSaveAll)
-Tilføj en funktion der:
-1. Opretter et offscreen canvas (200x200 pixels)
-2. Tegner alle pladers perler med korrekte farver
-3. Eksporterer til base64 PNG (`canvas.toDataURL('image/png', 0.8)`)
-4. Gemmer resultatet i `bead_patterns.thumbnail`
+## Brugerflow
 
 ```text
-+-------------------+
-|  Gem alt klikket   |
-+-------------------+
-        |
-        v
-+-------------------+
-| Gem plader (beads) |
-+-------------------+
-        |
-        v
++---------------------+
+| Klik "Vaelg billede" |
++---------------------+
+         |
+         v
++-------------------------+
+| 1. Upload billede       |
+|    (JPG/PNG, max 10MB)  |
++-------------------------+
+         |
+         v
++-------------------------+
+| 2. Beskaer billedet     |
+|    (traek i hjoerner)   |
++-------------------------+
+         |
+         v
 +----------------------------+
-| Generer thumbnail canvas   |
-| (200x200 px, alle plader)  |
+| 3. Vaelg plade-dimensioner |
+|    - Bredde (antal plader) |
+|    - Hoejde (antal plader) |
+|    - Perler per plade (29) |
+|    - Titel + kategori      |
 +----------------------------+
-        |
-        v
+         |
+         v
 +----------------------------+
-| Konverter til base64 PNG   |
+| 4. Preview: Se resultatet  |
+|    som perle-gitter         |
+|    (naermeste farve-match)  |
 +----------------------------+
-        |
-        v
+         |
+         v
 +----------------------------+
-| Gem thumbnail + total_beads |
-| i bead_patterns             |
+| 5. Bekraeft -> Opret       |
+|    pattern + plates i DB   |
+|    -> Naviger til editor   |
 +----------------------------+
 ```
 
-### Opdateret PatternPreview
-Forenklet komponent der:
-- Viser det gemte thumbnail som et `<img>` tag
-- Hvis intet thumbnail: viser "Ingen preview" med et ikon
-- Ingen dynamisk canvas-generering meer (fjerner 3 ekstra API-kald per kort)
+## Hvad bliver bygget
 
----
+### 1. ImportImageDialog (ny komponent)
+En dialog med en trinvis wizard:
 
-## Fil-aendringer
+- **Trin 1 – Upload**: Vaelg billede fra computeren. Vis billedet i en canvas.
+- **Trin 2 – Beskaer**: Simpel beskaerings-funktion med et rektangulaert udvalgsfelt som brugeren kan traekke og justere over billedet. Ingen ekstra biblioteker – implementeres med mus/touch-events paa en canvas.
+- **Trin 3 – Indstillinger**: Titel, kategori (genbrug CreatePatternDialog-logikken), antal plader i bredde/hoejde, pladedimension, offentlig/privat.
+- **Trin 4 – Preview**: Vis en canvas-preview af det konverterede perle-mooenster. Brugeren kan se hvordan billedet vil se ud som perler foer de bekraefter. Vis ogsaa statistik: antal farver brugt, total antal perler.
+- **Bekraeft**: Opret opskriften i databasen og naviger til editoren.
 
-| Fil | AEndring |
-|-----|---------|
-| Database migration | Tilføj admin-rolle + thumbnail kolonne |
-| `PatternEditor.tsx` | Generer og gem thumbnail ved "Gem alt" |
-| `PatternPreview.tsx` | Vis gemt thumbnail (img tag) i stedet for dynamisk canvas |
+### 2. Farve-matching algoritme (ren klient-kode)
+Konverterer hvert pixel i det beskaarne billede til den naermeste perlefarve:
 
----
+1. Skalerer billedet ned til maal-stoerrelsen (plader x dimension)
+2. Laeser RGB-vaerdien for hvert pixel
+3. Beregner farveafstand (Euklidisk distance i RGB-rummet) til alle aktive perlefarver
+4. Vaelger den naermeste farve for hvert pixel
+5. Springer helt hvide/transparente pixels over (ingen perle)
+
+### 3. Opdatering af Workshop.tsx
+- Aktiver "Vaelg billede"-knappen (fjern `disabled` og "Kommer snart")
+- Tilfoej state for ImportImageDialog
+- Forbind knappen til dialogen
+
+## Filer der oprettes/aendres
+
+| Fil | Handling |
+|-----|----------|
+| `src/components/workshop/ImportImageDialog.tsx` | **NY** – Wizard-dialog med upload, beskaering, indstillinger og preview |
+| `src/components/workshop/imageUtils.ts` | **NY** – Hjaelpefunktioner til billedbehandling og farve-matching |
+| `src/pages/Workshop.tsx` | **AENDRING** – Aktiver import-knappen og tilfoej ImportImageDialog |
 
 ## Tekniske detaljer
 
-### Thumbnail-generator funktion
-```typescript
-const generateThumbnail = (): string | null => {
-  const canvas = document.createElement('canvas');
-  const maxSize = 200;
-  const totalWidth = pattern.plate_width * pattern.plate_dimension;
-  const totalHeight = pattern.plate_height * pattern.plate_dimension;
-  const scale = Math.min(maxSize / totalWidth, maxSize / totalHeight);
-  
-  canvas.width = Math.ceil(totalWidth * scale);
-  canvas.height = Math.ceil(totalHeight * scale);
-  const ctx = canvas.getContext('2d');
-  
-  // Baggrund
-  ctx.fillStyle = '#f5f5f5';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  
-  // Tegn alle plader
-  plates.forEach(plate => {
-    const offsetX = plate.column_index * pattern.plate_dimension * scale;
-    const offsetY = plate.row_index * pattern.plate_dimension * scale;
-    
-    plate.beads.forEach(bead => {
-      if (bead.colorId) {
-        const color = colorMap.get(bead.colorId);
-        ctx.fillStyle = color?.hex_color || '#ccc';
-        ctx.fillRect(
-          offsetX + bead.col * scale,
-          offsetY + bead.row * scale,
-          Math.max(scale, 1),
-          Math.max(scale, 1)
-        );
-      }
-    });
-  });
-  
-  return canvas.toDataURL('image/png', 0.8);
-};
-```
+### Farve-matching (imageUtils.ts)
 
-### Forenklet PatternPreview
 ```typescript
-export const PatternPreview = ({ patternId, thumbnail }) => {
-  if (!thumbnail) {
-    return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-muted">
-        <ImageOff className="h-8 w-8" />
-        <span className="text-xs">Ingen preview</span>
-      </div>
-    );
+// Beregn Euklidisk farveafstand
+function colorDistance(r1, g1, b1, r2, g2, b2): number {
+  return Math.sqrt((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2);
+}
+
+// Find naermeste perlefarve for et pixel
+function findNearestColor(r, g, b, colors): ColorInfo | null {
+  // Spring hvide/naesten-hvide pixels over
+  if (r > 240 && g > 240 && b > 240) return null;
+  
+  let nearest = null;
+  let minDist = Infinity;
+  for (const color of colors) {
+    const dist = colorDistance(r, g, b, color.r, color.g, color.b);
+    if (dist < minDist) {
+      minDist = dist;
+      nearest = color;
+    }
   }
-  
-  return (
-    <img 
-      src={thumbnail} 
-      alt="Pattern preview" 
-      className="w-full h-full object-contain"
-    />
-  );
-};
+  return nearest;
+}
 ```
 
-### PatternCard opdatering
-PatternCard skal videregive thumbnail til PatternPreview:
-- Tilfoej `thumbnail` til Pattern interface
-- Hent `thumbnail` i Gallery.tsx query
-- Send som prop: `<PatternPreview thumbnail={pattern.thumbnail} />`
+### Beskaerings-logik (canvas-baseret)
+- Tegn billedet paa en canvas
+- Tegn et semi-transparent overlay med et rektangulaert "hul"
+- Brugeren kan traekke i kanterne/hjoernerne for at justere udvalget
+- Ved bekraeftelse: brug `ctx.drawImage()` med source-rektanglet til at uddrage det beskaarne omraade
 
----
+### Database-oprettelse (genbruger eksisterende mooenster)
+- Opretter `bead_patterns` med valgte indstillinger
+- Opretter `bead_plates` med de genererede perledata (beads JSON)
+- Genererer thumbnail som ved "Gem alt" i editoren
+- Navigerer til `/workshop/{patternId}`
 
-## Visuelt resultat
-
-### Galleri med thumbnails
-```
-+----------------------------+
-| Test plade          [🔒] ♥ |
-| [Kategori]                 |
-+----------------------------+
-|  [Thumbnail]  | Offentlig  |
-|  (200x200)    | 6. feb     |
-|  gemt som     | Heine      |
-|  base64 PNG   | 2x1 plader |
-|               | 20 perler  |
-|               | [Progress] |
-+----------------------------+
-| [Åben] [Nulstil]  [✏️] [🗑️]|
-+----------------------------+
-```
-
-Slet-knappen (🗑️) vises nu fordi admin-rollen er tildelt.
-
+### Afhaengigheder
+- Ingen nye npm-pakker noedvendige
+- Alt billedbehandling bruger native Canvas API
+- Genbruger eksisterende Supabase-klient og typer
