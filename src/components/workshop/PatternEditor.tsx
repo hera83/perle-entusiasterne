@@ -444,39 +444,14 @@ export const PatternEditor: React.FC = () => {
     }
   };
 
-  // Save all changes
+  // Save all changes - no auth checks needed, controlled refresh timer keeps token valid
   const handleSaveAll = async () => {
     if (!patternId) return;
 
-    // Use cached session (NO network call - avoids token refresh race condition)
-    const { data: { session } } = await supabase.auth.getSession();
-
-    if (!session) {
-      toast({
-        title: 'Session udløbet',
-        description: 'Du er blevet logget ud. Log ind igen for at gemme.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    // Check if token expires within 60 seconds - if so, do ONE controlled refresh
-    const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
-    if (expiresAt > 0 && expiresAt - Date.now() < 60000) {
-      const { error: refreshError } = await supabase.auth.refreshSession();
-      if (refreshError) {
-        toast({
-          title: 'Session udløbet',
-          description: 'Din session er udløbet. Log ind igen.',
-          variant: 'destructive',
-        });
-        return;
-      }
-    }
-
     setIsSaving(true);
     try {
-      // SEQUENTIAL saves - one request at a time to avoid token refresh storm
+      // Save directly - no auth check needed
+      // Our controlled refresh timer in AuthContext keeps the token valid
       for (const plate of plates) {
         const { error } = await supabase
           .from('bead_plates')
@@ -491,7 +466,7 @@ export const PatternEditor: React.FC = () => {
           throw error;
         }
 
-        // Short pause between saves to let token operations settle
+        // Short pause between saves
         await new Promise(resolve => setTimeout(resolve, 50));
       }
 

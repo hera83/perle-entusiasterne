@@ -151,13 +151,8 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
     if (!pattern) return { error: null };
 
     if (user) {
-      // Use cached session (NO network call - avoids token refresh race condition)
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        toast.error('Session udløbet - log ind igen for at gemme progress');
-        return { error: new Error('Session expired') };
-      }
-
+      // Save directly - no session check needed
+      // Controlled refresh timer in AuthContext keeps the token valid
       const { error } = await supabase
         .from('user_progress')
         .upsert({

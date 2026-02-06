@@ -313,6 +313,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_admin_stats: { Args: never; Returns: Json }
       get_pattern_owner: { Args: { _pattern_id: string }; Returns: string }
       has_any_users: { Args: never; Returns: boolean }
       has_role: {
