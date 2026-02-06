@@ -85,8 +85,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let isMounted = true;
 
-    // STOP the internal auto-refresh that causes the refresh loop
-    supabase.auth.stopAutoRefresh();
+    // autoRefreshToken is already set to false via the supabase-auth-config import
+    // (runs synchronously at module load, before React renders)
 
     // Listener for ONGOING auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
