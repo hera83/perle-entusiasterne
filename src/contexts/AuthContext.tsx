@@ -28,6 +28,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const currentUserIdRef = useRef<string | null>(null);
+  const wasLoggedInRef = useRef(false);
 
   const checkAdminRole = async (userId: string): Promise<boolean> => {
     try {
