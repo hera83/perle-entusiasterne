@@ -67,6 +67,7 @@ export const Favorites: React.FC = () => {
           plate_dimension,
           total_beads,
           is_public,
+          thumbnail,
           categories(name),
           profiles(display_name)
         `)
