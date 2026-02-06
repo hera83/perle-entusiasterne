@@ -1,281 +1,239 @@
 
 
-# Fix: Token-refresh loop - helt ny tilgang
+# Fix: Deaktiver auto-refresh KORREKT via property override
 
-## Problemet (nu med bevis fra network-loggen)
+## Problemet (med bevis fra kildekoden)
 
-Network-loggen afslorer det EGENTLIGE problem. Det er IKKE concurrent queries der trigger samtidige refreshes. Det er Supabase-klientens interne auto-refresh mekanisme der gaar i LOOP:
+`stopAutoRefresh()` har ALDRIG virket i nogen af de tidligere fixes. Her er hvorfor:
+
+### Supabase-klientens interne flow (fra kildekoden)
 
 ```text
-15:23:44 - Login (password) -> refresh_token: vr3j4ghnmexh
-15:23:44 - Refresh #1: vr3j4ghnmexh -> 2emwpcnm277d
-15:23:44 - Refresh #2: 2emwpcnm277d -> eeglqvubjau3
-15:23:44 - Refresh #3: eeglqvubjau3 -> u4xonkldtxsm
-15:23:44 - Refresh #4: u4xonkldtxsm -> v4z6r5qah4em
-15:23:44 - Refresh #5: v4z6r5qah4em -> uks6xevlk3oq
-15:23:44 - Refresh #6: uks6xevlk3oq -> zdus7ualzrwe
-15:23:44 - Refresh #7: zdus7ualzrwe -> ...
-                         ... indtil 429 rate limit
+createClient() 
+  -> GoTrueClient constructor
+    -> this.autoRefreshToken = true  (lagret som property)
+    -> this.initialize()             (asynkron!)
+
+_initialize()
+  -> _recoverAndRefresh()            (tjekker gammel session)
+  -> _handleVisibilityChange()       (registrerer visibility listener)
+    -> _onVisibilityChanged(true)
+      -> if (this.autoRefreshToken)   <-- TJEKKER PROPERTY
+        -> _startAutoRefresh()        <-- STARTER AUTO-REFRESH
 ```
 
-Hvert refresh KAeDER det naeste. Tokenet er helt nyt (1 times gyldighed), saa det er IKKE udloebet. Supabase-klientens `autoRefreshToken` mekanisme korer i en loop - den trigger et refresh, som trigger et nyt refresh, osv.
+### Hvad vores kode goer
 
-## Hvorfor alle tidligere fixes ikke virkede
+```text
+useEffect() koerer:
+  1. stopAutoRefresh()     <-- Koerer FOER _initialize() er faerdig!
+                               Intet at stoppe endnu = no-op
+  2. onAuthStateChange()   <-- Registrerer callback
+  3. getSession()          <-- Venter paa _initialize()
+                               _initialize() kalder _handleVisibilityChange()
+                               som GENSTARTER auto-refresh!
+```
 
-Vi har proevet at:
-- Fjerne re-renders ved TOKEN_REFRESHED (hjaelper ikke - loopet er internt i klienten)
-- Serialisere database-queries (hjaelper ikke - det er ikke queries der trigger det)
-- Erstatte getUser() med getSession() (hjaelper ikke - det er auto-refresh timeren)
-- Tilfoeje delays mellem queries (hjaelper ikke - loopet starter uafhaengigt af vores kode)
+Resultatet: `stopAutoRefresh()` er en komplet no-op. Auto-refresh koerer ALTID.
 
-INGEN af disse fixes adresserer det faktiske problem: **Supabase-klientens interne auto-refresh timer gaar i loop.**
+Derudover: Hver gang brugeren skifter tab (eller preview-iframet re-fokuseres), koerer Supabase-klienten internt:
 
-## Den nye loesning: Stop auto-refresh, styr det manuelt
+```text
+window 'visibilitychange' event
+  -> _onVisibilityChanged()
+    -> if (this.autoRefreshToken)   <-- Stadig true!
+      -> _startAutoRefresh()        <-- Genstarter IGEN
+```
 
-Supabase-klienten har en offentlig metode: `supabase.auth.stopAutoRefresh()`. Vi kan stoppe den interne (buggy) auto-refresh og implementere vores EGEN kontrollerede refresh-timer.
+## Loesningen: Override `autoRefreshToken` property
 
-Vi kan ikke redigere `client.ts` (auto-genereret), men vi kan kalde `stopAutoRefresh()` ved runtime i AuthContext.
+Den ENESTE maade at forhindre auto-refresh paa er at saette `autoRefreshToken = false` DIREKTE paa klient-instansen. Alle interne checks bruger denne property:
 
-### Hvad loesningen goer:
+- `_handleVisibilityChange()`: `if (this.autoRefreshToken)` -> starter auto-refresh
+- `_onVisibilityChanged()`: `if (this.autoRefreshToken)` -> starter auto-refresh ved tab-switch
+- `_recoverAndRefresh()`: `if (this.autoRefreshToken && currentSession.refresh_token)` -> refresher ved init
 
-1. **Stopper den interne auto-refresh** der looper
-2. **Implementerer en kontrolleret refresh-timer** der fyrer PRGCIS een gang, 5 minutter foer tokenet udloeber
-3. **Opretter en database-funktion** til admin-statistikker (1 query i stedet for 6)
-4. **Fjerner alle manuelle auth-checks** foer gem-operationer
+Ved at saette property'en til `false` FOER noget andet sker, vil INGEN af disse code paths aktiveres.
+
+## Aendringer (2 filer)
+
+### 1. Ny fil: `src/lib/supabase-auth-config.ts`
+
+Opretter en lille initialiseringsmodul der:
+- Importerer supabase-klienten
+- Saetter `autoRefreshToken = false` med det samme (synkront, ved modul-load)
+- Eksporterer en `initializeAuth()` funktion der AuthContext kan kalde
+
+Dette sikrer at property'en er sat FOER React overhovedet renderer.
+
+```text
+import { supabase } from '@/integrations/supabase/client';
+
+// Deaktiver auto-refresh SYNKRONT ved modul-load
+// Dette sker FOER React renderer, saa _initialize() 
+// aldrig starter auto-refresh
+(supabase.auth as any).autoRefreshToken = false;
+
+export async function cleanupAutoRefresh() {
+  // Vent paa at initialization er faerdig
+  await supabase.auth.getSession();
+  // Ryd op i eventuelt allerede startede timers og visibility listeners
+  await supabase.auth.stopAutoRefresh();
+}
+```
+
+### 2. `src/contexts/AuthContext.tsx`
+
+- Importerer det nye modul (import = synkron koersel af modul-kode)
+- Kalder `cleanupAutoRefresh()` EFTER `getSession()` i stedet for foer
+- Beholder vores manuelle `scheduleRefresh` timer uaendret
+
+Aendringer i `useEffect`:
+
+```text
+// FOER:
+useEffect(() => {
+  supabase.auth.stopAutoRefresh();  // <-- NO-OP!
+  
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(...);
+  
+  const initializeAuth = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    // ...
+  };
+  initializeAuth();
+}, []);
+
+// EFTER:
+import { cleanupAutoRefresh } from '@/lib/supabase-auth-config';
+
+useEffect(() => {
+  // INGEN stopAutoRefresh() her - det virker ikke foer init er faerdig
+  
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(...);
+  
+  const initializeAuth = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    // NU er initialization faerdig - ryd op i eventuelle timers
+    await cleanupAutoRefresh();
+    
+    // ... resten af init (scheduleRefresh, checkAdminRole, etc.)
+  };
+  initializeAuth();
+}, []);
+```
+
+## Hvorfor dette virker
+
+1. **Modul-import er synkron**: Naar AuthContext importerer `supabase-auth-config`, koeres `autoRefreshToken = false` OEJEBLIKKELIGT - foer React renderer, foer useEffect koerer, foer alt andet.
+
+2. **Alle interne checks fejler**: Supabase-klientens `_handleVisibilityChange()`, `_onVisibilityChanged()`, og `_recoverAndRefresh()` tjekker alle `this.autoRefreshToken`. Da den er `false`, starter de ALDRIG auto-refresh.
+
+3. **Tab-skift udloeser ikke refresh**: `_onVisibilityChanged()` starter kun auto-refresh hvis `this.autoRefreshToken === true`. Det er det ikke laengere.
+
+4. **Vores manuelle timer styrer refresh**: `scheduleRefresh()` i AuthContext fyrer praecis 1 gang, 5 minutter foer token udloeber. Ingen loop, ingen race condition.
+
+5. **`cleanupAutoRefresh()` rydder op**: Selv hvis `_initialize()` naaede at starte noget foer vores property-override tog effekt, rydder `cleanupAutoRefresh()` op efter init er faerdig.
+
+## Tekniske detaljer
+
+### `src/lib/supabase-auth-config.ts` (ny fil)
+
+```text
+import { supabase } from '@/integrations/supabase/client';
+
+// KRITISK: Dette koerer synkront ved modul-load, FOER React renderer.
+// Det forhindrer Supabase-klientens interne auto-refresh fra nogensinde at starte.
+//
+// Kildekode-reference (GoTrueClient.js):
+//   _onVisibilityChanged() linje 2281: if (this.autoRefreshToken) -> _startAutoRefresh()
+//   _recoverAndRefresh() linje 1916: if (this.autoRefreshToken) -> _callRefreshToken()
+//   _handleVisibilityChange() linje 2250: if (this.autoRefreshToken) -> startAutoRefresh()
+//
+// Ved at saette denne til false, vil INGEN af disse code paths aktiveres.
+(supabase.auth as any).autoRefreshToken = false;
+
+/**
+ * Rydder op i eventuelle auto-refresh timers og visibility listeners
+ * der blev startet under initialization.
+ * 
+ * SKAL kaldes EFTER supabase.auth.getSession() (som venter paa init).
+ */
+export async function cleanupAutoRefresh() {
+  await supabase.auth.stopAutoRefresh();
+}
+```
+
+### `src/contexts/AuthContext.tsx` - aendringer
+
+```text
+// Tilfoej import (dette KOERER modulet synkront = saetter autoRefreshToken = false)
+import { cleanupAutoRefresh } from '@/lib/supabase-auth-config';
+
+// I useEffect:
+useEffect(() => {
+  let isMounted = true;
+
+  // FJERNET: supabase.auth.stopAutoRefresh() 
+  // (virkede aldrig - autoRefreshToken property er allerede sat til false via import)
+
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    (event, session) => {
+      // ... eksisterende handler uaendret
+    }
+  );
+
+  const initializeAuth = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!isMounted) return;
+
+      // Ryd op EFTER initialization er faerdig
+      await cleanupAutoRefresh();
+
+      // ... resten af init uaendret (sessionRef, setUser, scheduleRefresh, etc.)
+    } catch (err) {
+      console.error('Error initializing auth:', err);
+    } finally {
+      if (isMounted) setLoading(false);
+    }
+  };
+
+  initializeAuth();
+
+  return () => {
+    isMounted = false;
+    subscription.unsubscribe();
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+  };
+}, [scheduleRefresh]);
+```
 
 ## Filer der aendres
 
 | Fil | Aendring |
 |-----|----------|
-| `src/contexts/AuthContext.tsx` | Stop auto-refresh, implementer kontrolleret refresh-timer |
-| `src/components/workshop/PatternEditor.tsx` | Fjern getSession/refreshSession check, bare gem direkte |
-| `src/components/gallery/PatternDialog.tsx` | Fjern getSession check |
-| `src/components/admin/AdminDashboard.tsx` | Brug ny RPC-funktion i stedet for 6 queries |
+| `src/lib/supabase-auth-config.ts` | NY FIL - saetter autoRefreshToken = false ved modul-load |
+| `src/contexts/AuthContext.tsx` | Importerer ny fil, flytter cleanup til efter init |
 
-Plus en ny database-migration til RPC-funktionen.
+## Forskellen fra alle tidligere forsog
 
-## Tekniske detaljer
-
-### AuthContext.tsx - Kontrolleret token-refresh
-
-Kerneideen: vi stopper Supabase-klientens auto-refresh og styrer det selv.
-
-```text
-// Ved opstart:
-supabase.auth.stopAutoRefresh();
-
-// Vores egen refresh-timer:
-const refreshTimerRef = useRef<number | null>(null);
-
-const scheduleRefresh = (session: Session) => {
-  // Ryd eksisterende timer
-  if (refreshTimerRef.current) {
-    clearTimeout(refreshTimerRef.current);
-    refreshTimerRef.current = null;
-  }
-
-  // Beregn hvornaar tokenet udloeber
-  const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
-  if (expiresAt === 0) return;
-
-  // Refresh 5 minutter foer udloeb (minimum 30 sekunder)
-  const refreshIn = Math.max(expiresAt - Date.now() - 5 * 60 * 1000, 30000);
-
-  refreshTimerRef.current = window.setTimeout(async () => {
-    const { data, error } = await supabase.auth.refreshSession();
-    if (!error && data.session) {
-      // Planlaeg naeste refresh med det nye token
-      scheduleRefresh(data.session);
-    }
-    // Hvis refresh fejler: auto-refresh var allerede stoppet,
-    // brugeren vil se "session udloebet" naeste gang de proever noget
-  }, refreshIn);
-};
-
-// I onAuthStateChange:
-if (event === 'SIGNED_IN' && session) {
-  scheduleRefresh(session);
-}
-
-if (event === 'TOKEN_REFRESHED' && session) {
-  sessionRef.current = session;
-  scheduleRefresh(session);  // Nulstil timer med nyt token
-  return; // Ingen re-render
-}
-
-if (event === 'SIGNED_OUT') {
-  if (refreshTimerRef.current) {
-    clearTimeout(refreshTimerRef.current);
-    refreshTimerRef.current = null;
-  }
-  // ... reset state
-}
-
-// I initializeAuth:
-const { data: { session } } = await supabase.auth.getSession();
-if (session) {
-  scheduleRefresh(session);
-}
-
-// I cleanup:
-return () => {
-  isMounted = false;
-  subscription.unsubscribe();
-  if (refreshTimerRef.current) {
-    clearTimeout(refreshTimerRef.current);
-  }
-};
-```
-
-### PatternEditor.tsx - Fjern auth-checks foer gem
-
-Alle manuelle `getSession()` og `refreshSession()` kald fjernes. Vi stoler paa at Supabase-klienten har et gyldigt token (fordi vi styrer refresh selv), og haandterer fejl hvis den ikke har.
-
-```text
-// FOER (linje 448-475):
-const handleSaveAll = async () => {
-  if (!patternId) return;
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) { ... }
-  const expiresAt = session.expires_at ? ...;
-  if (expiresAt ...) {
-    const { error } = await supabase.auth.refreshSession();
-    ...
-  }
-  // ... gem logik
-};
-
-// EFTER:
-const handleSaveAll = async () => {
-  if (!patternId) return;
-
-  setIsSaving(true);
-  try {
-    // Gem direkte - ingen auth-check noedvendig
-    // Vores kontrollerede refresh-timer holder tokenet gyldigt
-    for (const plate of plates) {
-      const { error } = await supabase
-        .from('bead_plates')
-        .update({ beads: plate.beads as unknown as Json })
-        .eq('id', plate.id);
-
-      if (error) {
-        if (error.message?.includes('JWT') || error.code === 'PGRST301') {
-          throw new Error('SESSION_EXPIRED');
-        }
-        throw error;
-      }
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-
-    // Thumbnail + metadata...
-    setHasUnsavedChanges(false);
-    toast({ title: 'Gemt', description: 'Alle aendringer er gemt.' });
-  } catch (error) {
-    // ... fejlhaandtering
-  } finally {
-    setIsSaving(false);
-  }
-};
-```
-
-### PatternDialog.tsx - Fjern getSession check
-
-```text
-// FOER:
-const saveProgress = async (...) => {
-  if (user) {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { ... }
-    // ... gem
-  }
-};
-
-// EFTER:
-const saveProgress = async (...) => {
-  if (user) {
-    // Gem direkte - ingen session-check
-    const { error } = await supabase
-      .from('user_progress')
-      .upsert({ ... });
-
-    if (error) {
-      console.error('Error saving progress:', error);
-      return { error };
-    }
-  }
-  // ...
-};
-```
-
-### Database migration - RPC funktion for admin stats
-
-Opretter en enkelt database-funktion der returnerer alle admin-statistikker i eet kald:
-
-```sql
-CREATE OR REPLACE FUNCTION get_admin_stats()
-RETURNS JSON
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-  result JSON;
-BEGIN
-  -- Kun admins maa kalde denne
-  IF NOT is_admin(auth.uid()) THEN
-    RAISE EXCEPTION 'Not authorized';
-  END IF;
-
-  SELECT json_build_object(
-    'total_patterns', (SELECT count(*) FROM bead_patterns),
-    'public_patterns', (SELECT count(*) FROM bead_patterns WHERE is_public = true),
-    'private_patterns', (SELECT count(*) FROM bead_patterns WHERE is_public = false),
-    'total_categories', (SELECT count(*) FROM categories),
-    'total_users', (SELECT count(*) FROM profiles),
-    'started_patterns', (SELECT count(*) FROM user_progress)
-  ) INTO result;
-
-  RETURN result;
-END;
-$$;
-```
-
-### AdminDashboard.tsx - Brug RPC
-
-```text
-// FOER: 6 separate COUNT queries med delays
-const { count: totalPatterns } = await supabase.from('bead_patterns')...
-await new Promise(r => setTimeout(r, 50));
-const { count: publicPatterns } = await supabase.from('bead_patterns')...
-// ... 6 queries total
-
-// EFTER: 1 enkelt kald
-const { data, error } = await supabase.rpc('get_admin_stats');
-
-if (!error && data) {
-  setStats({
-    totalPatterns: data.total_patterns,
-    publicPatterns: data.public_patterns,
-    privatePatterns: data.private_patterns,
-    totalCategories: data.total_categories,
-    totalUsers: data.total_users,
-    startedPatterns: data.started_patterns,
-    completedPatterns: 0,
-  });
-}
-```
+| Forsog | Hvorfor det ikke virkede |
+|--------|------------------------|
+| stopAutoRefresh() foer init | No-op - intet at stoppe endnu |
+| stopAutoRefresh() + scheduleRefresh | stopAutoRefresh stadig no-op, og visibility listener genstarter auto-refresh |
+| Serialisere queries | Problemet er IKKE queries, det er auto-refresh timeren |
+| getSession() i stedet for getUser() | Hjjaelper ikke naar auto-refresh allerede looper |
+| **Ny: autoRefreshToken = false** | **Forhindrer ALLE interne auto-refresh code paths** |
 
 ## Forventet resultat
 
-- **INGEN auto-refresh loop** - den interne mekanisme er stoppet
-- **PRAECIS 1 refresh per session** - vores timer fyrer 5 min foer udloeb
-- **1 database-kald for admin stats** i stedet for 6
-- **Ingen manuelle auth-checks** der kan race med refresh
-- **Sessionen forbliver stabil** ved navigation, gemning og alt andet
-
-## Hvorfor denne loesning er anderledes
-
-Alle tidligere fixes proevede at reducere ANTALLET af queries for at undgaa at trigge refresh-stormen. Men stormen sker INTERNT i Supabase-klienten, uafhaengigt af vores queries. Den eneste loesning er at STOPPE den interne auto-refresh og styre det selv.
-
-`supabase.auth.stopAutoRefresh()` er en officielt undersoettet metode i Supabase JS v2.
+- INGEN auto-refresh loop - den interne mekanisme kan aldrig starte
+- Tab-skift udloeser IKKE token refresh
+- Praecis 1 refresh per session - vores timer fyrer 5 min foer udloeb
+- Sessionen forbliver stabil ved navigation, gemning, tab-skift og alt andet
 
