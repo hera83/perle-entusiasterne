@@ -108,6 +108,16 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
   // Creating state
   const [isCreating, setIsCreating] = useState(false);
 
+  // Auto-calculate plateHeight from image aspect ratio
+  useEffect(() => {
+    if (cropRect.width > 0 && cropRect.height > 0) {
+      const totalPixelWidth = plateWidth * plateDimension;
+      const ratio = cropRect.height / cropRect.width;
+      const calculatedHeight = Math.max(1, Math.round((totalPixelWidth * ratio) / plateDimension));
+      setPlateHeight(calculatedHeight);
+    }
+  }, [plateWidth, plateDimension, cropRect.width, cropRect.height]);
+
   // Fetch categories and colors when dialog opens
   useEffect(() => {
     if (open) {
