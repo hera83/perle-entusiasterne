@@ -78,7 +78,7 @@ const parseBeads = (beadsJson: Json): Bead[] => {
 export const PatternEditor: React.FC = () => {
   const { patternId } = useParams<{ patternId: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, verifySession } = useAuth();
   const { toast } = useToast();
 
   const [pattern, setPattern] = useState<Pattern | null>(null);
