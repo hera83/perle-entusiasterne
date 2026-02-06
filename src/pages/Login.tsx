@@ -109,17 +109,16 @@ export const Login: React.FC = () => {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) return;
 
-      // Insert local favorites to database (ignore conflicts)
-      for (const patternId of localFavorites) {
-        await supabase
-          .from('user_favorites')
-          .upsert({
+      // Single bulk upsert instead of N individual requests
+      await supabase
+        .from('user_favorites')
+        .upsert(
+          localFavorites.map((patternId: string) => ({
             user_id: currentUser.id,
             pattern_id: patternId,
-          }, {
-            onConflict: 'user_id,pattern_id'
-          });
-      }
+          })),
+          { onConflict: 'user_id,pattern_id' }
+        );
 
       // Clear localStorage favorites
       localStorage.removeItem('favorites');
