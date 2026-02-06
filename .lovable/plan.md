@@ -1,235 +1,173 @@
 
-# Fix: Session tabes under gemning (og stille datatab)
 
-## Problem-analyse
+# Fix: Tilfaeldige logouts og token-storm (den egentlige root cause)
 
-Der er TO sammenkoblede problemer:
+## Hvad gaar galt - den RIGTIGE aarsag
 
-### Problem 1: Sessionen mistes efter login
-Auth-loggen viser 6+ samtidige `token_revoked` events inden for 2-3 sekunder efter login. Det sker fordi login udloeser en kaskade af samtidige database-kald:
-- `syncFavoritesOnLogin()` koerer en for-loop med individuelle upserts (et kald per favorit)
-- `checkAdminRole()` koerer et kald
-- `ThemeContext` koerer et kald for at hente tema
-- Alle disse kald rammer databasen naesten samtidigt og kan trigge samtidige token-refresh forsog
+Trods alle tidligere fixes sker problemet stadig. Aarsagen er fundet:
 
-Naar to refresh-forsog bruger det SAMME refresh token, lykkes det ene, men det andet fejler. Supabase-klienten tolker dette som "session kompromitteret" og logger brugeren ud.
+### Den skjulte re-render kaskade
 
-### Problem 2: Tavs datatab ved gem
-Network-loggen afslorer noget kritisk: ALLE gem-requests bruger **anon-noeglen** som authorization - ikke brugerens JWT token. Det betyder sessionen allerede var tabt FoER brugeren trykkede "Gem alt".
+`AuthContext` eksponerer `session` i sin context-value. Naar `TOKEN_REFRESHED` fyrer, kalder vi `setSession(session)` - dette aendrer context-valuens reference, og **ALLE** komponenter der bruger `useAuth()` re-renderer. Men INGEN komponent bruger faktisk `session` fra contexten (de kalder `supabase.auth.getSession()` direkte naar de har brug for det).
 
-RLS-politikkerne paa `bead_plates` kraever `auth.uid()` for UPDATE. Med anon-noeglen er `auth.uid() = NULL`, saa UPDATE matcher ingen raekker. Supabase returnerer status 204 (ingen fejl), men NUL raekker opdateres. **Data bliver IKKE gemt, men brugeren faar ingen fejlbesked.**
+Saa her er kaskaden:
 
-Naar koden naar til at opdatere `bead_patterns` (thumbnail), fejler det ogsaa stille. Til sidst opfanger noget at sessionen er vaek, og brugeren redirectes til login.
+```text
+TOKEN_REFRESHED event
+  -> setSession(newSession)
+  -> AuthContext.Provider value aendres
+  -> ALLE useAuth() consumers re-renderer
+  -> PatternCard (3 stk paa galleriet) har [pattern.id, user] dependency
+  -> Hver PatternCard fyrer checkFavorite() + refreshProgress() = 2 queries
+  -> 6+ database queries paa een gang
+  -> Nogle af disse kan trigge endnu en token refresh
+  -> Ny TOKEN_REFRESHED -> gentag fra start
+  -> 429 rate limit -> session tabt -> logget ud
+```
+
+### Yderligere problemer fundet
+
+- **PatternCard.tsx**: `useEffect` afhanger af `[pattern.id, user]` (hele objektet) - fyrer 2 DB-queries per kort ved ENHVER user-reference aendring
+- **Favorites.tsx**: `useEffect` afhanger af `[user]` (hele objektet)
+- **PatternDialog.tsx**: `navigate()` kalder `saveProgress()` UDEN `await` - fire-and-forget requests der hober sig op
+- **AuthContext.tsx**: `session` state er unodvendig i React - den bruges aldrig af consumers, men trigger re-renders
 
 ## Loesning (4 filer)
 
-### 1. AuthContext.tsx - Stabil session-haandtering
+### 1. AuthContext.tsx - Stop unodvendige re-renders
 
-**Problem**: TOKEN_REFRESHED ignoreres helt, saa React-stateens session-objekt bliver stale. Det er ikke i sig selv aarsagen, men det betyder at vi mister synkronisering med Supabase-klienten.
-
-**Fix**: 
-- Haandter TOKEN_REFRESHED ved at opdatere session-state UDEN at aendre user/isAdmin
-- Behold currentUserIdRef for at forhindre unodvendige user-opdateringer
-- Tilfoej INITIAL_SESSION haandtering der ogsaa opdaterer session silently
-
-```text
-onAuthStateChange handler (ny logik):
-  TOKEN_REFRESHED:
-    - Opdater session state (holder React i sync med klienten)
-    - Opdater IKKE user eller isAdmin (undgaar re-render-kaskade)
-  
-  INITIAL_SESSION:
-    - Ignorer (initializeAuth haandterer dette)
-  
-  SIGNED_IN:
-    - Kun opdater hvis user ID er ny (via ref)
-  
-  SIGNED_OUT:
-    - Nulstil alt
-```
-
-### 2. PatternEditor.tsx - Sikker batch-gemning
-
-**Problem**: `handleSaveAll` koerer en sekventiel for-loop med N individuelle UPDATE-kald (et per plade). Med f.eks. 6 plader = 7 requests. Desuden er der ingen session-verifikation foer gemning.
+**Problem**: `setSession()` paa TOKEN_REFRESHED trigger re-renders i hele appen, men ingen komponent bruger `session` fra contexten.
 
 **Fix**:
-- Tilfoej session-tjek FOER gemning starter (kald `getSession()`)
-- Hvis sessionen er ugyldig, vis en tydelig fejlbesked i stedet for at gemme stille
-- Erstat den sekventielle for-loop med `Promise.all` for at reducere samlet tid
-- Tilfoej fejldetektering der fanger auth-fejl specifikt
+- Gem session i en `useRef` i stedet for `useState` - dette trigger IKKE re-renders
+- Behold `session` i context-interfacet for bagudkompatibilitet, men laes den fra ref
+- Memoiser context-value med `useMemo` saa den kun aendres naar `user`, `loading` eller `isAdmin` faktisk aendres
+- TOKEN_REFRESHED opdaterer kun session-ref (ingen re-render)
 
-```text
-handleSaveAll (ny logik):
-  1. Kald supabase.auth.getSession()
-  2. Hvis ingen session: vis fejl "Du er logget ud - log ind igen"
-  3. Opret alle update-promises paa een gang
-  4. Koer Promise.all (parallelt i stedet for sekventielt)
-  5. Hvis nogen fejler: vis praecis fejlbesked
-  6. Opdater thumbnail og total_beads
-```
+### 2. PatternCard.tsx - Stabiliser dependencies
 
-### 3. Login.tsx - Batch favorit-synkronisering
+**Problem**: `useEffect` med `[pattern.id, user]` fyrer 2 database-queries (checkFavorite + refreshProgress) for HVERT kort, hver gang user-objektet faar ny reference.
 
-**Problem**: `syncFavoritesOnLogin` koerer en for-loop der laver individuelle upserts for hver favorit. Med 5 favoritter = 5 sekventielle requests + getUser(), som alle sker umiddelbart efter login = burst af 6+ requests paa 1-2 sekunder.
+**Fix**: Aendr dependency fra `[pattern.id, user]` til `[pattern.id, user?.id]`
 
-**Fix**: 
-- Erstat for-loopen med en enkelt bulk-upsert
-- Fjern det separate `getUser()` kald og brug `user` fra auth context i stedet
+### 3. Favorites.tsx - Stabiliser dependencies
 
-```text
-syncFavoritesOnLogin (ny logik):
-  1. Hent favorites fra localStorage
-  2. Hvis ingen: return
-  3. Byg et array af alle favorites
-  4. Koer EN enkelt upsert med hele arrayet
-  5. Slet localStorage
-```
+**Problem**: `useEffect` med `[user]` re-fetcher alle favoritter ved enhver user-reference aendring.
 
-### 4. PatternDialog.tsx - Session-tjek paa progress-gem
+**Fix**: Aendr dependency fra `[user]` til `[user?.id]`
 
-**Problem**: `saveProgress` gemmer brugerens progress men tjekker ikke om sessionen er gyldig.
+### 4. PatternDialog.tsx - Undgaa fire-and-forget
 
-**Fix**: Tilfoej en session-verifikation foer database-operationer i `saveProgress`, saa brugeren faar en tydelig besked hvis sessionen er udloebet.
+**Problem**: `navigate()` funktionen (linje 233) kalder `saveProgress()` uden `await`. Disse fire-and-forget requests kan hobe sig op og trigge samtidige token refreshes.
+
+**Fix**: Goed saveProgress-kaldet `await` i navigate-funktionen, saa det foerste kald er faerdigt foer det naeste starter.
 
 ## Filer der aendres
 
 | Fil | Aendring |
 |-----|----------|
-| `src/contexts/AuthContext.tsx` | Haandter TOKEN_REFRESHED med session-opdatering |
-| `src/components/workshop/PatternEditor.tsx` | Session-tjek + batch gem med Promise.all |
-| `src/pages/Login.tsx` | Bulk upsert for favorit-sync |
-| `src/components/gallery/PatternDialog.tsx` | Session-tjek i saveProgress |
+| `src/contexts/AuthContext.tsx` | Session i useRef, memoiser context value |
+| `src/components/gallery/PatternCard.tsx` | Stabiliser useEffect dependency |
+| `src/pages/Favorites.tsx` | Stabiliser useEffect dependency |
+| `src/components/gallery/PatternDialog.tsx` | Await saveProgress i navigate |
 
 ## Tekniske detaljer
 
-### AuthContext.tsx
+### AuthContext.tsx - Ny implementering
 
 ```text
+// FOER:
+const [session, setSession] = useState<Session | null>(null);
+
+// EFTER:
+const sessionRef = useRef<Session | null>(null);
+
 // I onAuthStateChange:
 if (event === 'TOKEN_REFRESHED') {
-  // Opdater session saa React state forbliver synkroniseret
   if (session) {
-    setSession(session);
+    sessionRef.current = session;  // Opdater ref - INGEN re-render
   }
-  return; // Opdater IKKE user/isAdmin - undgaar re-render kaskade
+  return;
 }
 
-if (event === 'INITIAL_SESSION') return; // initializeAuth haandterer dette
+// Ved SIGNED_IN:
+sessionRef.current = session;
+setUser(session.user);  // Kun user trigger re-render
+
+// Memoiser context value:
+const contextValue = useMemo(() => ({
+  user,
+  session: sessionRef.current,
+  loading,
+  isAdmin,
+  signIn,
+  signOut,
+}), [user, loading, isAdmin]);
+
+return (
+  <AuthContext.Provider value={contextValue}>
+    {children}
+  </AuthContext.Provider>
+);
 ```
 
-### PatternEditor.tsx - handleSaveAll
+### PatternCard.tsx
 
 ```text
-const handleSaveAll = async () => {
-  if (!patternId) return;
+// FOER (linje 59-62):
+useEffect(() => {
+  checkFavorite();
+  refreshProgress();
+}, [pattern.id, user]);
 
-  // KRITISK: Verificer session foer vi starter
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
-    toast({
-      title: 'Session udloebet',
-      description: 'Du er blevet logget ud. Log ind igen for at gemme.',
-      variant: 'destructive',
-    });
-    return;
-  }
-
-  setIsSaving(true);
-  try {
-    // Batch: Koer alle plate-updates parallelt
-    const updatePromises = plates.map(plate =>
-      supabase
-        .from('bead_plates')
-        .update({ beads: plate.beads as unknown as Json })
-        .eq('id', plate.id)
-    );
-
-    const results = await Promise.all(updatePromises);
-    
-    // Tjek for fejl
-    const errors = results.filter(r => r.error);
-    if (errors.length > 0) {
-      throw errors[0].error;
-    }
-
-    // Thumbnail + metadata
-    const totalBeads = plates.reduce((sum, plate) => sum + plate.beads.length, 0);
-    const thumbnail = generateThumbnail();
-
-    const { error: metaError } = await supabase
-      .from('bead_patterns')
-      .update({ total_beads: totalBeads, thumbnail })
-      .eq('id', patternId);
-
-    if (metaError) throw metaError;
-
-    setHasUnsavedChanges(false);
-    toast({ title: 'Gemt', description: 'Alle aendringer er gemt.' });
-  } catch (error) {
-    console.error('Error saving:', error);
-    toast({
-      title: 'Fejl',
-      description: 'Kunne ikke gemme aendringer. Proev at logge ind igen.',
-      variant: 'destructive',
-    });
-  } finally {
-    setIsSaving(false);
-  }
-};
+// EFTER:
+useEffect(() => {
+  checkFavorite();
+  refreshProgress();
+}, [pattern.id, user?.id]);
 ```
 
-### Login.tsx - syncFavoritesOnLogin
+### Favorites.tsx
 
 ```text
-const syncFavoritesOnLogin = async () => {
-  try {
-    const localFavorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-    if (localFavorites.length === 0) return;
-
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    if (!currentUser) return;
-
-    // EN enkelt bulk upsert i stedet for N individuelle
-    await supabase
-      .from('user_favorites')
-      .upsert(
-        localFavorites.map((patternId: string) => ({
-          user_id: currentUser.id,
-          pattern_id: patternId,
-        })),
-        { onConflict: 'user_id,pattern_id' }
-      );
-
-    localStorage.removeItem('favorites');
-  } catch (err) {
-    console.error('Error syncing favorites:', err);
-  }
-};
-```
-
-### PatternDialog.tsx - saveProgress
-
-```text
-const saveProgress = async (completed: string[], position: PlatePosition) => {
-  if (!pattern) return { error: null };
-
+// FOER (linje 32-36):
+useEffect(() => {
   if (user) {
-    // Verificer session foerst
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      return { error: new Error('Session expired') };
-    }
-
-    const { error } = await supabase
-      .from('user_progress')
-      .upsert({...}, { onConflict: 'user_id,pattern_id' });
-
-    if (error) return { error };
-  } else {
-    localStorage.setItem(...);
+    fetchFavorites();
   }
+}, [user]);
 
-  onProgressChange?.();
-  return { error: null };
+// EFTER:
+useEffect(() => {
+  if (user) {
+    fetchFavorites();
+  }
+}, [user?.id]);
+```
+
+### PatternDialog.tsx
+
+```text
+// FOER (linje 209-234):
+const navigate = (direction: 'prev' | 'next') => {
+  // ... beregn ny position ...
+  setCurrentPosition(newPosition);
+  saveProgress(completedPlates, newPosition);  // fire-and-forget!
+};
+
+// EFTER:
+const navigate = async (direction: 'prev' | 'next') => {
+  // ... beregn ny position ...
+  setCurrentPosition(newPosition);
+  await saveProgress(completedPlates, newPosition);  // vent paa det er faerdigt
 };
 ```
+
+## Forventet resultat
+
+- TOKEN_REFRESHED trigger INGEN re-renders (session er i ref)
+- PatternCard queries fyrer KUN naar brugeren faktisk skifter (user.id aendres)
+- Favorites re-fetcher KUN naar brugeren faktisk skifter
+- saveProgress kald sker sekventielt i stedet for at hobe sig op
+- Ingen cascade af database-kald -> ingen 429 rate limit -> ingen session-tab
+
