@@ -20,6 +20,7 @@ interface Pattern {
   plate_dimension: number;
   total_beads: number;
   is_public: boolean;
+  thumbnail?: string | null;
 }
 
 export const Favorites: React.FC = () => {
