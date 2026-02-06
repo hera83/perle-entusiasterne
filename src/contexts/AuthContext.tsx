@@ -86,6 +86,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (event === 'SIGNED_IN' && session?.user) {
+          wasLoggedInRef.current = true;
           // Only update state if it's actually a different user
           if (currentUserIdRef.current !== session.user.id) {
             currentUserIdRef.current = session.user.id;
