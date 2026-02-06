@@ -35,15 +35,13 @@ export const Login: React.FC = () => {
     }
   }, [user, navigate]);
 
-  // Check if there are any users
+  // Check if there are any users using RPC function (bypasses RLS)
   useEffect(() => {
     const checkForUsers = async () => {
       try {
-        const { count, error } = await supabase
-          .from('profiles')
-          .select('*', { count: 'exact', head: true });
+        const { data, error } = await supabase.rpc('has_any_users');
 
-        if (!error && count === 0) {
+        if (!error && data === false) {
           setShowFirstAdmin(true);
         }
       } catch (err) {
