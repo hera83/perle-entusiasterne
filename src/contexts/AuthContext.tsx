@@ -127,13 +127,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { error };
   };
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setIsAdmin(false);
-  };
+  }, []);
+
+  const contextValue = useMemo(() => ({
+    user,
+    session: sessionRef.current,
+    loading,
+    isAdmin,
+    signIn,
+    signOut,
+  }), [user, loading, isAdmin, signIn, signOut]);
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, isAdmin, signIn, signOut }}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
