@@ -728,15 +728,13 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="import-plateHeight">Højde (antal plader)</Label>
-                  <Input
-                    id="import-plateHeight"
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={plateHeight}
-                    onChange={(e) => setPlateHeight(Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
-                  />
+                  <Label>Højde (antal plader)</Label>
+                  <div className="flex h-10 w-full items-center rounded-md border border-input bg-muted px-3 py-2 text-sm text-muted-foreground">
+                    {plateHeight}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Beregnet automatisk ud fra billedets proportioner
+                  </p>
                 </div>
               </div>
 
