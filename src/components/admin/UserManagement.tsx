@@ -82,21 +82,22 @@ export const UserManagement: React.FC = () => {
         return;
       }
 
-      // Fetch roles for each user
-      const usersWithRoles: User[] = await Promise.all(
-        (profiles || []).map(async (profile) => {
-          const { data: roleData } = await supabase
-            .from('user_roles')
-            .select('role')
-            .eq('user_id', profile.user_id)
-            .maybeSingle();
+      // Fetch ALL roles in a single query instead of N individual queries
+      const userIds = (profiles || []).map(p => p.user_id);
+      const { data: allRoles } = await supabase
+        .from('user_roles')
+        .select('user_id, role')
+        .in('user_id', userIds);
 
-          return {
-            ...profile,
-            role: (roleData?.role as 'admin' | 'user') || null,
-          };
-        })
+      // Combine locally
+      const roleMap = new Map(
+        (allRoles || []).map(r => [r.user_id, r.role])
       );
+
+      const usersWithRoles: User[] = (profiles || []).map(profile => ({
+        ...profile,
+        role: (roleMap.get(profile.user_id) as 'admin' | 'user') || null,
+      }));
 
       setUsers(usersWithRoles);
     } catch (err) {

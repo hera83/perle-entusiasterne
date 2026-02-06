@@ -31,7 +31,7 @@ export const AdminDashboard: React.FC = () => {
 
   const fetchStats = async () => {
     try {
-      // Fetch pattern counts
+      // Sequential queries with pauses to avoid token refresh storm
       const { count: totalPatterns } = await supabase
         .from('bead_patterns')
         .select('*', { count: 'exact', head: true });
@@ -41,28 +41,26 @@ export const AdminDashboard: React.FC = () => {
         .select('*', { count: 'exact', head: true })
         .eq('is_public', true);
 
+      await new Promise(r => setTimeout(r, 50));
+
       const { count: privatePatterns } = await supabase
         .from('bead_patterns')
         .select('*', { count: 'exact', head: true })
         .eq('is_public', false);
 
-      // Fetch category count
       const { count: totalCategories } = await supabase
         .from('categories')
         .select('*', { count: 'exact', head: true });
 
-      // Fetch user count
+      await new Promise(r => setTimeout(r, 50));
+
       const { count: totalUsers } = await supabase
         .from('profiles')
         .select('*', { count: 'exact', head: true });
 
-      // Fetch progress stats
       const { count: startedPatterns } = await supabase
         .from('user_progress')
         .select('*', { count: 'exact', head: true });
-
-      // Note: We'd need to calculate completed patterns based on progress data
-      // For now, we'll just show started patterns
 
       setStats({
         totalPatterns: totalPatterns || 0,
