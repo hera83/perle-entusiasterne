@@ -108,6 +108,16 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
   // Creating state
   const [isCreating, setIsCreating] = useState(false);
 
+  // Auto-calculate plateHeight from image aspect ratio
+  useEffect(() => {
+    if (cropRect.width > 0 && cropRect.height > 0) {
+      const totalPixelWidth = plateWidth * plateDimension;
+      const ratio = cropRect.height / cropRect.width;
+      const calculatedHeight = Math.max(1, Math.round((totalPixelWidth * ratio) / plateDimension));
+      setPlateHeight(calculatedHeight);
+    }
+  }, [plateWidth, plateDimension, cropRect.width, cropRect.height]);
+
   // Fetch categories and colors when dialog opens
   useEffect(() => {
     if (open) {
@@ -718,15 +728,13 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="import-plateHeight">Højde (antal plader)</Label>
-                  <Input
-                    id="import-plateHeight"
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={plateHeight}
-                    onChange={(e) => setPlateHeight(Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
-                  />
+                  <Label>Højde (antal plader)</Label>
+                  <div className="flex h-10 w-full items-center rounded-md border border-input bg-muted px-3 py-2 text-sm text-muted-foreground">
+                    {plateHeight}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Beregnet automatisk ud fra billedets proportioner
+                  </p>
                 </div>
               </div>
 
@@ -754,6 +762,9 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
                 </p>
                 <p className="text-muted-foreground">
                   Billedet skaleres til {plateWidth * plateDimension} × {plateHeight * plateDimension} perler
+                </p>
+                <p className="text-xs text-muted-foreground/70 italic">
+                  Højden er låst til billedets aspektratio ({cropRect.width > 0 ? (cropRect.width / cropRect.height).toFixed(2) : '–'})
                 </p>
               </div>
 
