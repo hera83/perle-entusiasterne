@@ -86,6 +86,7 @@ export type Database = {
           plate_dimension: number
           plate_height: number
           plate_width: number
+          thumbnail: string | null
           title: string
           total_beads: number | null
           updated_at: string
@@ -99,6 +100,7 @@ export type Database = {
           plate_dimension?: number
           plate_height?: number
           plate_width?: number
+          thumbnail?: string | null
           title: string
           total_beads?: number | null
           updated_at?: string
@@ -112,6 +114,7 @@ export type Database = {
           plate_dimension?: number
           plate_height?: number
           plate_width?: number
+          thumbnail?: string | null
           title?: string
           total_beads?: number | null
           updated_at?: string
