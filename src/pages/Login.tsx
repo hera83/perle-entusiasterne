@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,18 +47,9 @@ export const Login: React.FC = () => {
     checkForUsers();
   }, []);
 
-  const [redirecting, setRedirecting] = useState(false);
-
-  // Redirect if already logged in (only after auth is fully loaded)
-  useEffect(() => {
-    if (user && !authLoading) {
-      setRedirecting(true);
-      navigate('/');
-    }
-  }, [user, authLoading, navigate]);
-
-  if (redirecting) {
-    return null;
+  // Redirect if already logged in (simple render check, no useEffect race)
+  if (user && !authLoading) {
+    return <Navigate to="/" replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -88,11 +79,11 @@ export const Login: React.FC = () => {
         return;
       }
 
-      // Sync favorites from localStorage to database
-      await syncFavoritesOnLogin();
-
       toast.success('Du er nu logget ind');
       navigate('/');
+
+      // Sync favorites AFTER navigation with delay to avoid concurrent auth calls
+      setTimeout(() => syncFavoritesOnLogin(), 2000);
     } catch (err) {
       setError('Der opstod en uventet fejl');
       console.error('Login error:', err);
@@ -106,15 +97,16 @@ export const Login: React.FC = () => {
       const localFavorites = JSON.parse(localStorage.getItem('favorites') || '[]');
       if (localFavorites.length === 0) return;
 
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (!currentUser) return;
+      // Use getSession() here - session should be stable 2s after login
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
 
       // Single bulk upsert instead of N individual requests
       await supabase
         .from('user_favorites')
         .upsert(
           localFavorites.map((patternId: string) => ({
-            user_id: currentUser.id,
+            user_id: session.user.id,
             pattern_id: patternId,
           })),
           { onConflict: 'user_id,pattern_id' }

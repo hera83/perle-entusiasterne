@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface AuthContextType {
   user: User | null;
@@ -27,6 +28,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const currentUserIdRef = useRef<string | null>(null);
+  const wasLoggedInRef = useRef(false);
 
   const checkAdminRole = async (userId: string): Promise<boolean> => {
     try {
@@ -69,14 +71,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (event === 'INITIAL_SESSION') return;
 
         if (event === 'SIGNED_OUT') {
+          const wasLoggedIn = wasLoggedInRef.current;
+          wasLoggedInRef.current = false;
           currentUserIdRef.current = null;
           sessionRef.current = null;
           setUser(null);
           setIsAdmin(false);
+
+          // Show message only if user didn't sign out voluntarily
+          if (wasLoggedIn) {
+            toast.error('Du er blevet logget ud. Dine seneste ændringer er muligvis ikke gemt.');
+          }
           return;
         }
 
         if (event === 'SIGNED_IN' && session?.user) {
+          wasLoggedInRef.current = true;
           // Only update state if it's actually a different user
           if (currentUserIdRef.current !== session.user.id) {
             currentUserIdRef.current = session.user.id;
@@ -128,6 +138,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signOut = useCallback(async () => {
+    wasLoggedInRef.current = false; // Prevent "unexpected logout" message
     await supabase.auth.signOut();
     setIsAdmin(false);
   }, []);

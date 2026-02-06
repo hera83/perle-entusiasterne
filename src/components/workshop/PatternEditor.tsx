@@ -448,9 +448,11 @@ export const PatternEditor: React.FC = () => {
   const handleSaveAll = async () => {
     if (!patternId) return;
 
-    // Verify session before saving
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
+    // Verify session against server (NOT just cache)
+    const { data: { user: currentUser }, error: userError } =
+      await supabase.auth.getUser();
+
+    if (userError || !currentUser) {
       toast({
         title: 'Session udløbet',
         description: 'Du er blevet logget ud. Log ind igen for at gemme.',
@@ -461,20 +463,23 @@ export const PatternEditor: React.FC = () => {
 
     setIsSaving(true);
     try {
-      // Batch: Run all plate updates in parallel
-      const updatePromises = plates.map(plate =>
-        supabase
+      // SEQUENTIAL saves - one request at a time to avoid token refresh storm
+      for (const plate of plates) {
+        const { error } = await supabase
           .from('bead_plates')
           .update({ beads: plate.beads as unknown as Json })
-          .eq('id', plate.id)
-      );
+          .eq('id', plate.id);
 
-      const results = await Promise.all(updatePromises);
-      
-      // Check for errors
-      const errors = results.filter(r => r.error);
-      if (errors.length > 0) {
-        throw errors[0].error;
+        if (error) {
+          // Detect auth errors specifically
+          if (error.message?.includes('JWT') || error.code === 'PGRST301') {
+            throw new Error('SESSION_EXPIRED');
+          }
+          throw error;
+        }
+
+        // Short pause between saves to let token operations settle
+        await new Promise(resolve => setTimeout(resolve, 50));
       }
 
       // Generate thumbnail and update pattern metadata
@@ -496,9 +501,13 @@ export const PatternEditor: React.FC = () => {
 
     } catch (error) {
       console.error('Error saving:', error);
+      const isAuthError = error instanceof Error &&
+        error.message === 'SESSION_EXPIRED';
       toast({
-        title: 'Fejl',
-        description: 'Kunne ikke gemme ændringer. Prøv at logge ind igen.',
+        title: isAuthError ? 'Session udløbet' : 'Fejl',
+        description: isAuthError
+          ? 'Du er blevet logget ud. Log ind igen og prøv at gemme.'
+          : 'Kunne ikke gemme ændringer.',
         variant: 'destructive',
       });
     } finally {
