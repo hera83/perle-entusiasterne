@@ -35,6 +35,7 @@ interface Pattern {
   plate_height: number;
   plate_dimension: number;
   total_beads: number;
+  is_public?: boolean;
 }
 
 interface PatternCardProps {
