@@ -167,7 +167,11 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
         });
 
       if (error) {
-        console.error('Error saving progress:', error);
+        if (error.message?.includes('JWT') || error.code === 'PGRST301') {
+          console.error('Auth error saving progress, session may be expired:', error);
+        } else {
+          console.error('Error saving progress:', error);
+        }
         return { error };
       }
     } else {

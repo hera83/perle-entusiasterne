@@ -225,7 +225,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isAdmin,
     signIn,
     signOut,
-  }), [user, loading, isAdmin, signIn, signOut]);
+    verifySession,
+  }), [user, loading, isAdmin, signIn, signOut, verifySession]);
 
   return (
     <AuthContext.Provider value={contextValue}>

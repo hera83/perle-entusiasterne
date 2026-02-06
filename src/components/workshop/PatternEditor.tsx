@@ -490,12 +490,26 @@ export const PatternEditor: React.FC = () => {
     } catch (error) {
       console.error('Error saving:', error);
       const isAuthError = error instanceof Error &&
-        error.message === 'SESSION_EXPIRED';
+        (error.message === 'SESSION_EXPIRED' ||
+         error.message?.includes('JWT') ||
+         error.message?.includes('401'));
+
+      if (isAuthError) {
+        const isValid = await verifySession();
+        if (!isValid) {
+          toast({
+            title: 'Session udløbet',
+            description: 'Du er blevet logget ud. Log ind igen for at gemme.',
+            variant: 'destructive',
+          });
+          navigate('/login');
+          return;
+        }
+      }
+
       toast({
-        title: isAuthError ? 'Session udløbet' : 'Fejl',
-        description: isAuthError
-          ? 'Du er blevet logget ud. Log ind igen og prøv at gemme.'
-          : 'Kunne ikke gemme ændringer.',
+        title: 'Fejl',
+        description: 'Kunne ikke gemme ændringer.',
         variant: 'destructive',
       });
     } finally {
