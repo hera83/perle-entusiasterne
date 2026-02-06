@@ -123,7 +123,7 @@ export const Favorites: React.FC = () => {
     <Layout>
       <div className="container px-4 py-8">
         <div className="flex items-center gap-3 mb-8">
-          <Heart className="h-8 w-8 text-red-500 fill-current" />
+          <Heart className="h-8 w-8 text-destructive fill-current" />
           <div>
             <h1 className="text-3xl font-bold">Mine favoritter</h1>
             <p className="text-muted-foreground">
