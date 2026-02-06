@@ -276,16 +276,16 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
         </div>
       </CardContent>
 
-      <CardFooter className="flex justify-between gap-2 pt-2">
-        <div className="flex gap-2">
-          <Button size="sm" onClick={onOpen}>
-            <Eye className="h-4 w-4 mr-1" />
+      <CardFooter className="flex justify-between gap-1 pt-2">
+        <div className="flex gap-1">
+          <Button size="sm" onClick={onOpen} className="h-7 text-xs px-2">
+            <Eye className="h-3.5 w-3.5 mr-1" />
             Åben
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button size="sm" variant="outline">
-                <RotateCcw className="h-4 w-4 mr-1" />
+              <Button size="sm" variant="outline" className="h-7 text-xs px-2">
+                <RotateCcw className="h-3.5 w-3.5 mr-1" />
                 Nulstil
               </Button>
             </AlertDialogTrigger>
@@ -303,20 +303,34 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          <Button 
+            size="sm" 
+            variant="outline" 
+            onClick={handleDownloadPdf} 
+            disabled={isGeneratingPdf}
+            className="h-7 text-xs px-2"
+          >
+            {isGeneratingPdf ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+            ) : (
+              <FileDown className="h-3.5 w-3.5 mr-1" />
+            )}
+            PDF
+          </Button>
         </div>
 
         {(canEdit || canDelete) && (
-          <div className="flex gap-2">
+          <div className="flex gap-1">
             {canEdit && (
-              <Button size="sm" variant="secondary" onClick={handleEdit}>
-                <Pencil className="h-4 w-4" />
+              <Button size="sm" variant="secondary" onClick={handleEdit} className="h-7 w-7 p-0">
+                <Pencil className="h-3.5 w-3.5" />
               </Button>
             )}
             {canDelete && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button size="sm" variant="destructive">
-                    <Trash2 className="h-4 w-4" />
+                  <Button size="sm" variant="destructive" className="h-7 w-7 p-0">
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
