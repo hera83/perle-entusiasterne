@@ -79,11 +79,11 @@ export const Login: React.FC = () => {
         return;
       }
 
-      // Sync favorites from localStorage to database
-      await syncFavoritesOnLogin();
-
       toast.success('Du er nu logget ind');
       navigate('/');
+
+      // Sync favorites AFTER navigation with delay to avoid concurrent auth calls
+      setTimeout(() => syncFavoritesOnLogin(), 2000);
     } catch (err) {
       setError('Der opstod en uventet fejl');
       console.error('Login error:', err);
