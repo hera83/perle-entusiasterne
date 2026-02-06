@@ -448,17 +448,30 @@ export const PatternEditor: React.FC = () => {
   const handleSaveAll = async () => {
     if (!patternId) return;
 
-    // Verify session against server (NOT just cache)
-    const { data: { user: currentUser }, error: userError } =
-      await supabase.auth.getUser();
+    // Use cached session (NO network call - avoids token refresh race condition)
+    const { data: { session } } = await supabase.auth.getSession();
 
-    if (userError || !currentUser) {
+    if (!session) {
       toast({
         title: 'Session udløbet',
         description: 'Du er blevet logget ud. Log ind igen for at gemme.',
         variant: 'destructive',
       });
       return;
+    }
+
+    // Check if token expires within 60 seconds - if so, do ONE controlled refresh
+    const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
+    if (expiresAt > 0 && expiresAt - Date.now() < 60000) {
+      const { error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        toast({
+          title: 'Session udløbet',
+          description: 'Din session er udløbet. Log ind igen.',
+          variant: 'destructive',
+        });
+        return;
+      }
     }
 
     setIsSaving(true);
