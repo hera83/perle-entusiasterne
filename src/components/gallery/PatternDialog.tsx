@@ -348,11 +348,6 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
                 <PatternPreview thumbnail={pattern.thumbnail} />
               </div>
             )}
-
-            <Button onClick={handlePrint} variant="outline" className="w-full">
-              <Printer className="h-4 w-4 mr-2" />
-              Print plade
-            </Button>
           </div>
         </div>
       </DialogContent>
