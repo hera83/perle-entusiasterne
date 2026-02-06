@@ -105,7 +105,7 @@ export const Gallery: React.FC = () => {
 
   useEffect(() => {
     fetchPatterns();
-  }, []);
+  }, [user, isAdmin]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
