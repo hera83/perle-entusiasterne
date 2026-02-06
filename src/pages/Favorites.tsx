@@ -33,7 +33,7 @@ export const Favorites: React.FC = () => {
     if (user) {
       fetchFavorites();
     }
-  }, [user]);
+  }, [user?.id]);
 
   const fetchFavorites = async () => {
     if (!user) return;

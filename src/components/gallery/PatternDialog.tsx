@@ -206,7 +206,7 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
     }
   };
 
-  const navigate = (direction: 'prev' | 'next') => {
+  const navigate = async (direction: 'prev' | 'next') => {
     if (!pattern) return;
 
     let newRow = currentPosition.row;
@@ -230,7 +230,7 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
 
     const newPosition = { row: newRow, plate: newPlate };
     setCurrentPosition(newPosition);
-    saveProgress(completedPlates, newPosition);
+    await saveProgress(completedPlates, newPosition);
   };
 
   const canGoPrev = currentPosition.row > 1 || currentPosition.plate > 1;

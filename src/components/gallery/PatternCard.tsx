@@ -59,7 +59,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
   useEffect(() => {
     checkFavorite();
     refreshProgress();
-  }, [pattern.id, user]);
+  }, [pattern.id, user?.id]);
 
   const checkFavorite = async () => {
     if (user) {
