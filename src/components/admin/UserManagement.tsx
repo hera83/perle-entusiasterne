@@ -111,45 +111,30 @@ export const UserManagement: React.FC = () => {
     setFormLoading(true);
 
     try {
-      const redirectUrl = `${window.location.origin}/`;
-
-      // Create auth user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: redirectUrl,
-          data: {
-            display_name: displayName,
-          },
-        },
-      });
-
-      if (authError) {
-        toast.error(authError.message);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error('Du er ikke logget ind');
         return;
       }
 
-      if (authData.user) {
-        // Update display name in profile
-        await supabase
-          .from('profiles')
-          .update({ display_name: displayName })
-          .eq('user_id', authData.user.id);
+      const response = await supabase.functions.invoke('create-user', {
+        body: { email, password, displayName, role },
+      });
 
-        // Assign role
-        await supabase
-          .from('user_roles')
-          .insert({
-            user_id: authData.user.id,
-            role,
-          });
-
-        toast.success('Bruger oprettet! Brugeren kan nu logge ind.');
-        setDialogOpen(false);
-        resetForm();
-        fetchUsers();
+      if (response.error) {
+        toast.error(response.error.message || 'Kunne ikke oprette bruger');
+        return;
       }
+
+      if (response.data?.error) {
+        toast.error(response.data.error);
+        return;
+      }
+
+      toast.success('Bruger oprettet! Brugeren kan nu logge ind.');
+      setDialogOpen(false);
+      resetForm();
+      fetchUsers();
     } catch (err) {
       console.error('Error creating user:', err);
       toast.error('Kunne ikke oprette bruger');
