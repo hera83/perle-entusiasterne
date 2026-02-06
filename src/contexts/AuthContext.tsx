@@ -11,6 +11,7 @@ interface AuthContextType {
   isAdmin: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
+  verifySession: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -105,24 +106,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // INITIAL_SESSION is handled by initializeAuth below
         if (event === 'INITIAL_SESSION') return;
 
+        // SIGNED_OUT: IGNORER FULDSTÆNDIGT
+        // Vi rydder KUN brugerstate via den eksplicitte signOut() funktion.
+        // Dette gør appen immun over for Supabase-klientens interne SIGNED_OUT events
+        // (fx fra token reuse detection, failed refresh, rate limiting).
         if (event === 'SIGNED_OUT') {
-          const wasLoggedIn = wasLoggedInRef.current;
-          wasLoggedInRef.current = false;
-          currentUserIdRef.current = null;
-          sessionRef.current = null;
-          setUser(null);
-          setIsAdmin(false);
-
-          // Clear refresh timer
-          if (refreshTimerRef.current) {
-            clearTimeout(refreshTimerRef.current);
-            refreshTimerRef.current = null;
-          }
-
-          // Show message only if user didn't sign out voluntarily
-          if (wasLoggedIn) {
-            toast.error('Du er blevet logget ud. Dine seneste ændringer er muligvis ikke gemt.');
-          }
           return;
         }
 
@@ -193,14 +181,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signOut = useCallback(async () => {
-    wasLoggedInRef.current = false; // Prevent "unexpected logout" message
-    // Clear refresh timer before signing out
+    // Ryd ALLE auth-relaterede state DIREKTE - vi stoler ikke på SIGNED_OUT event
+    currentUserIdRef.current = null;
+    sessionRef.current = null;
+    wasLoggedInRef.current = false;
+    setUser(null);
+    setIsAdmin(false);
+
+    // Clear refresh timer
     if (refreshTimerRef.current) {
       clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = null;
     }
-    await supabase.auth.signOut();
+
+    // Kald Supabase signOut (state er allerede ryddet, SIGNED_OUT event ignoreres)
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('Error during signOut:', err);
+    }
+  }, []);
+
+  const verifySession = useCallback(async (): Promise<boolean> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) return true;
+
+    // Session er virkelig væk - ryd state
+    currentUserIdRef.current = null;
+    sessionRef.current = null;
+    setUser(null);
     setIsAdmin(false);
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+    return false;
   }, []);
 
   const contextValue = useMemo(() => ({
@@ -210,7 +225,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isAdmin,
     signIn,
     signOut,
-  }), [user, loading, isAdmin, signIn, signOut]);
+    verifySession,
+  }), [user, loading, isAdmin, signIn, signOut, verifySession]);
 
   return (
     <AuthContext.Provider value={contextValue}>

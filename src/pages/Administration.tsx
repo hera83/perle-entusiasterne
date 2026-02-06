@@ -22,7 +22,11 @@ export const Administration: React.FC = () => {
     );
   }
 
-  if (!user || !isAdmin) {
+  if (!user && !loading) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user && !isAdmin && !loading) {
     return <Navigate to="/" replace />;
   }
 
