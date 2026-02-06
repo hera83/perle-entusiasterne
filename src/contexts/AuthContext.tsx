@@ -106,24 +106,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // INITIAL_SESSION is handled by initializeAuth below
         if (event === 'INITIAL_SESSION') return;
 
+        // SIGNED_OUT: IGNORER FULDSTÆNDIGT
+        // Vi rydder KUN brugerstate via den eksplicitte signOut() funktion.
+        // Dette gør appen immun over for Supabase-klientens interne SIGNED_OUT events
+        // (fx fra token reuse detection, failed refresh, rate limiting).
         if (event === 'SIGNED_OUT') {
-          const wasLoggedIn = wasLoggedInRef.current;
-          wasLoggedInRef.current = false;
-          currentUserIdRef.current = null;
-          sessionRef.current = null;
-          setUser(null);
-          setIsAdmin(false);
-
-          // Clear refresh timer
-          if (refreshTimerRef.current) {
-            clearTimeout(refreshTimerRef.current);
-            refreshTimerRef.current = null;
-          }
-
-          // Show message only if user didn't sign out voluntarily
-          if (wasLoggedIn) {
-            toast.error('Du er blevet logget ud. Dine seneste ændringer er muligvis ikke gemt.');
-          }
           return;
         }
 
