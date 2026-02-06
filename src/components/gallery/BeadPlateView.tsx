@@ -45,7 +45,9 @@ export const BeadPlateView: React.FC<BeadPlateViewProps> = ({ beads, colors, dim
     }
   });
 
-  const beadSize = Math.max(20, Math.min(32, Math.floor(600 / dimension)));
+  const beadSize = containerSize
+    ? Math.max(16, Math.floor(Math.min(containerSize.width, containerSize.height) / (dimension + 1)))
+    : Math.max(20, Math.min(32, Math.floor(600 / dimension)));
 
   return (
     <div className="inline-block">
