@@ -10,6 +10,7 @@ import { ColorManagementDialog } from '@/components/workshop/ColorManagementDial
 
 export const Workshop: React.FC = () => {
   const { user, loading } = useAuth();
+  const [colorDialogOpen, setColorDialogOpen] = useState(false);
 
   if (loading) {
     return (
