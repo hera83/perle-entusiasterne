@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { InteractiveBeadGrid } from './InteractiveBeadGrid';
 import { EditorToolbar } from './EditorToolbar';
-import { Save } from 'lucide-react';
+import { Save, X } from 'lucide-react';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface Bead {
   row: number;
@@ -54,6 +55,19 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
   const [replaceFromColorId, setReplaceFromColorId] = useState<string | null>(null);
   const [replaceToColorId, setReplaceToColorId] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+  
+  const isMobile = useIsMobile();
+
+  // Track window width for responsive layout
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Compact mode when mobile or narrow screen
+  const isCompact = isMobile || windowWidth < 900;
 
   // Initialize beads when dialog opens
   useEffect(() => {
@@ -151,23 +165,33 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-[95vw] max-h-[95vh] w-auto">
+      <DialogContent className="max-w-[95vw] max-h-[95vh] w-auto" hideCloseButton>
         <DialogHeader>
-          <DialogTitle className="flex items-center justify-between">
+          <DialogTitle className="flex items-center justify-between gap-4">
             <span>Række {rowIndex + 1}, Plade {columnIndex + 1}</span>
-            <Button 
-              onClick={handleSave} 
-              size="sm"
-              disabled={!hasChanges}
-            >
-              <Save className="w-4 h-4 mr-2" />
-              Gem
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="outline"
+                onClick={handleClose} 
+                size="sm"
+              >
+                <X className="w-4 h-4 mr-2" />
+                Luk
+              </Button>
+              <Button 
+                onClick={handleSave} 
+                size="sm"
+                disabled={!hasChanges}
+              >
+                <Save className="w-4 h-4 mr-2" />
+                Gem
+              </Button>
+            </div>
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex gap-4 overflow-hidden">
-          {/* Grid area */}
+        <div className={`flex ${isCompact ? 'flex-col' : 'flex-row'} gap-4 overflow-hidden`}>
+          {/* Grid area - always first and full size */}
           <ScrollArea className="flex-1 max-h-[70vh]">
             <div className="p-2">
               <InteractiveBeadGrid
@@ -183,10 +207,11 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
             </div>
           </ScrollArea>
 
-          {/* Toolbar */}
-          <div className="w-64 flex-shrink-0">
-            <ScrollArea className="max-h-[70vh]">
+          {/* Toolbar - adapts to compact mode */}
+          <div className={isCompact ? 'w-full' : 'w-64 flex-shrink-0'}>
+            {isCompact ? (
               <EditorToolbar
+                compact
                 colors={colors}
                 selectedColorId={selectedColorId}
                 onColorSelect={setSelectedColorId}
@@ -202,7 +227,26 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
                 onReplaceGlobal={handleReplaceGlobal}
                 onClearPlate={handleClearPlate}
               />
-            </ScrollArea>
+            ) : (
+              <ScrollArea className="max-h-[70vh]">
+                <EditorToolbar
+                  colors={colors}
+                  selectedColorId={selectedColorId}
+                  onColorSelect={setSelectedColorId}
+                  isPipetteActive={isPipetteActive}
+                  onPipetteToggle={() => setIsPipetteActive(!isPipetteActive)}
+                  isDrawMode={isDrawMode}
+                  onDrawModeToggle={setIsDrawMode}
+                  replaceFromColorId={replaceFromColorId}
+                  replaceToColorId={replaceToColorId}
+                  onReplaceFromChange={setReplaceFromColorId}
+                  onReplaceToChange={setReplaceToColorId}
+                  onReplaceOnPlate={handleReplaceOnPlate}
+                  onReplaceGlobal={handleReplaceGlobal}
+                  onClearPlate={handleClearPlate}
+                />
+              </ScrollArea>
+            )}
           </div>
         </div>
 
