@@ -53,6 +53,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
   const [progress, setProgress] = useState(0);
   const [totalPlates, setTotalPlates] = useState(0);
   const [completedPlates, setCompletedPlates] = useState(0);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   const canEdit = isAdmin || (user && user.id === pattern.user_id);
   const canDelete = isAdmin;
