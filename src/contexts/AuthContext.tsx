@@ -152,6 +152,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { data: { session } } = await supabase.auth.getSession();
         if (!isMounted) return;
 
+        // Clean up any timers/listeners that may have started during init
+        await cleanupAutoRefresh();
+
         sessionRef.current = session ?? null;
         setUser(session?.user ?? null);
         currentUserIdRef.current = session?.user?.id ?? null;
