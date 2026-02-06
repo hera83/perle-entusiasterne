@@ -1,61 +1,84 @@
 
-# Plan: Deaktiver Email-bekræftelse + Tilføj Navn-felt
+# Plan: Farve-Administration i WorkShoppen
 
 ## Overblik
-Der skal laves to ændringer:
-1. **Slå email-bekræftelse fra** - så brugere kan logge ind med det samme
-2. **Tilføj "Navn" felt** til login-flowet for første administrator
+Implementer Farve-administrations popup i WorkShoppen, hvor brugere kan se, tilføje, redigere og slette perlefarver. Ændringer gemmes først når brugeren trykker "Gem" - ingen automatisk gemning.
 
-## Ændringer
+## Komponenter der skal oprettes
 
-### 1. Konfigurer Authentication
-Deaktiver email-bekræftelse i Lovable Cloud, så nye brugere kan logge ind med det samme uden at skulle bekræfte deres email først.
+### 1. ColorManagementDialog.tsx
+En popup-dialog med følgende funktionalitet:
 
-### 2. Login-siden (Første Administrator)
-Tilføj et "Navn" felt til formularen for oprettelse af første administrator:
-- Nyt input-felt: **Navn** (f.eks. "Dit fulde navn")
-- Navnet gemmes i `profiles.display_name` når brugeren oprettes
-- Feltet vises kun når der oprettes første administrator
+**Header:**
+- Titel: "Farve-administration"
+- Forklarende tekst: "Administrer dine perlefarver. Ændringer gemmes først når du trykker Gem."
 
-### 3. Bruger-administration 
-Bruger-administrationen har allerede et "Navn" felt, så det behøver ikke ændres. Dog skal toast-beskeden opdateres, da den stadig nævner bekræftelses-email.
+**Body - Farvetabel:**
+| Farve | Kode | Navn | HEX | Aktiv | Handlinger |
+|-------|------|------|-----|-------|------------|
+| [cirkel] | 01 | Hvid | #FFFFFF | [switch] | Rediger / Slet |
 
-### 4. Galleri - "Oprettet af"
-Galleriet henter allerede `creator_name` fra `profiles.display_name` og viser det som "Oprettet af" på hvert kort. Dette fungerer korrekt, da queryen joiner med `profiles(display_name)`.
+- Farvevisning: Rund cirkel med baggrundfarven
+- Kode: Tekstfelt (string, f.eks. "01")
+- Navn: Tekstfelt (f.eks. "Hvid")
+- HEX: Farve-input med color picker
+- Aktiv: Switch/toggle til at aktivere/deaktivere farver
+- Handlinger: Rediger og Slet knapper
 
----
+**Tilføj ny farve:**
+- Knap "Tilføj farve" åbner inline formular eller separat række
+- Felter: Kode, Navn, HEX-farve, Aktiv (default: true)
 
-## Tekniske Detaljer
+**Footer:**
+- "Annuller" knap - lukker uden at gemme
+- "Gem ændringer" knap - gemmer alle ændringer til databasen
 
-### Fil-ændringer
+### 2. Lokal state-håndtering
+- Hent farver fra database ved åbning
+- Gem ændringer lokalt i component state
+- Marker ændringer som "unsaved" (vis indikator)
+- Ved "Gem": sammenlign med original og udfør INSERT/UPDATE/DELETE
+- Ved "Annuller": nulstil til original state
 
-**src/pages/Login.tsx**
-- Tilføj `displayName` state variabel
-- Tilføj nyt input-felt for navn i formularen (kun ved første admin)
-- Ved oprettelse: gem `display_name` i profiles-tabellen efter signup
-- Opdater valideringsschema til at inkludere navn (kun for signup)
-- Fjern tekst om email-bekræftelse fra success-toast
+### 3. Workshop.tsx opdatering
+- Aktiver "Åben farver" knappen (fjern disabled)
+- Tilføj state til at styre dialog åben/lukket
+- Importér og brug ColorManagementDialog
 
-**src/components/admin/UserManagement.tsx**
-- Fjern tekst om bekræftelses-email fra success-toast
-- Formularen har allerede navn-feltet
+## Database-interaktion
 
-### Auth-konfiguration
-Brug `configure-auth` værktøjet til at slå email-bekræftelse fra i Lovable Cloud.
+**Læs farver:**
+```sql
+SELECT * FROM bead_colors ORDER BY code
+```
 
----
+**Gem ændringer (batch):**
+- Nye farver: INSERT INTO bead_colors
+- Ændrede farver: UPDATE bead_colors WHERE id = ...
+- Slettede farver: DELETE FROM bead_colors WHERE id = ...
 
-## Flow efter ændringer
+## Validering
+- Kode: Påkrævet, unik
+- Navn: Påkrævet
+- HEX: Påkrævet, valid HEX format (#RRGGBB)
 
-### Første Administrator
-1. Bruger åbner login-siden
-2. Systemet opdager ingen brugere → viser "Opret første administrator"
-3. Bruger udfylder: **Navn**, Email, Adgangskode
-4. Bruger trykker "Opret administrator"
-5. Bruger oprettes og logges ind med det samme
-6. Redirect til Galleriet
+## Brugeroplevelse
+- Bekræftelsesdialog ved sletning af farve
+- Toast-besked ved succesfuld gemning
+- Advarsel hvis bruger lukker med ugemte ændringer
+- Hjælpetekster på alle felter (tooltips/labels)
 
-### Admin opretter ny bruger
-1. Admin går til Administration → Brugere → Opret bruger
-2. Udfylder: Navn, Email, Adgangskode, Rolle
-3. Bruger oprettes og kan logge ind med det samme
+## Tekniske detaljer
+
+**Nye filer:**
+- `src/components/workshop/ColorManagementDialog.tsx` - Hovedkomponent
+- `src/components/workshop/ColorRow.tsx` - Enkelt farve-række (optional, kan være inline)
+
+**Ændrede filer:**
+- `src/pages/Workshop.tsx` - Tilføj dialog og state
+
+**UI-komponenter brugt:**
+- Dialog, DialogContent, DialogHeader, DialogFooter fra shadcn
+- Table, TableHeader, TableBody, TableRow, TableCell
+- Input, Button, Switch, Label
+- AlertDialog for bekræftelse ved sletning
