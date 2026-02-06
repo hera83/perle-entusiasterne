@@ -22,6 +22,7 @@ export const Login: React.FC = () => {
   const { user, signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showFirstAdmin, setShowFirstAdmin] = useState(false);
