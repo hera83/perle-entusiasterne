@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Layout } from '@/components/layout/Layout';
 import { useAuth } from '@/contexts/AuthContext';
@@ -6,6 +6,7 @@ import { Loader2, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Upload, Plus, Palette } from 'lucide-react';
+import { ColorManagementDialog } from '@/components/workshop/ColorManagementDialog';
 
 export const Workshop: React.FC = () => {
   const { user, loading } = useAuth();
