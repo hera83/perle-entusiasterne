@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,7 @@ import { ChevronLeft, ChevronRight, Printer } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { BeadPlateView } from './BeadPlateView';
+import { PatternPreview } from './PatternPreview';
 import { toast } from 'sonner';
 
 interface Pattern {
@@ -20,6 +21,7 @@ interface Pattern {
   plate_width: number;
   plate_height: number;
   plate_dimension: number;
+  thumbnail?: string | null;
 }
 
 interface PatternDialogProps {
@@ -46,9 +48,29 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
   const [plateData, setPlateData] = useState<any>(null);
   const [colors, setColors] = useState<Map<string, { hex_color: string; name: string; code: string }>>(new Map());
   const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const [containerSize, setContainerSize] = useState<{ width: number; height: number } | undefined>();
+  const beadContainerRef = useRef<HTMLDivElement>(null);
 
   const totalPlates = pattern ? pattern.plate_width * pattern.plate_height : 0;
   const currentPlateKey = `${currentPosition.row}-${currentPosition.plate}`;
+
+  // Measure bead container with ResizeObserver
+  useEffect(() => {
+    const el = beadContainerRef.current;
+    if (!el || !open) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+          setContainerSize({ width, height });
+        }
+      }
+    });
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [open]);
 
   // Load progress and colors on open, then navigate to first incomplete plate
   useEffect(() => {
@@ -151,8 +173,6 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
     if (!pattern) return { error: null };
 
     if (user) {
-      // Save directly - no session check needed
-      // Controlled refresh timer in AuthContext keeps the token valid
       const { error } = await supabase
         .from('user_progress')
         .upsert({
@@ -243,10 +263,10 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent hideCloseButton className="max-w-[95vw] max-h-[95vh] w-full h-full p-0 overflow-hidden">
-        <DialogHeader className="p-4 pb-2 border-b no-print">
+      <DialogContent hideCloseButton className="max-w-[95vw] max-h-[95vh] w-full h-full p-0 overflow-hidden flex flex-col">
+        <DialogHeader className="px-4 py-2 border-b no-print flex-shrink-0">
           <div className="flex items-center justify-between">
-            <DialogTitle className="text-xl">
+            <DialogTitle className="text-base">
               {pattern.title}
               {pattern.category_name && (
                 <span className="text-muted-foreground font-normal ml-2">
@@ -254,35 +274,35 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
                 </span>
               )}
             </DialogTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <Button
                 variant="outline"
-                size="lg"
+                size="sm"
                 onClick={() => navigate('prev')}
                 disabled={!canGoPrev}
-                className="h-12 px-4"
+                className="h-9 px-3"
               >
-                <ChevronLeft className="h-6 w-6" />
+                <ChevronLeft className="h-4 w-4" />
                 <span className="hidden sm:inline ml-1">Tilbage</span>
               </Button>
-              <span className="text-sm font-medium px-3">
+              <span className="text-sm font-medium px-2">
                 Række {currentPosition.row}, Plade {currentPosition.plate}
               </span>
               <Button
                 variant="outline"
-                size="lg"
+                size="sm"
                 onClick={() => navigate('next')}
                 disabled={!canGoNext}
-                className="h-12 px-4"
+                className="h-9 px-3"
               >
                 <span className="hidden sm:inline mr-1">Frem</span>
-                <ChevronRight className="h-6 w-6" />
+                <ChevronRight className="h-4 w-4" />
               </Button>
               <Button
                 variant="outline"
-                size="lg"
+                size="sm"
                 onClick={() => onOpenChange(false)}
-                className="h-12 px-4"
+                className="h-9 px-3"
               >
                 Luk
               </Button>
@@ -290,13 +310,14 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-hidden p-4 grid grid-cols-1 md:grid-cols-[1fr_250px] gap-4">
+        <div className="flex-1 overflow-hidden p-4 grid grid-cols-1 md:grid-cols-[1fr_250px] gap-4 min-h-0">
           {/* Bead Plate */}
-          <div className="flex-1 overflow-auto flex items-center justify-center">
+          <div ref={beadContainerRef} className="overflow-auto flex items-center justify-center min-h-0">
             <BeadPlateView
               beads={plateData || []}
               colors={colors}
               dimension={pattern.plate_dimension}
+              containerSize={containerSize}
             />
           </div>
 
@@ -325,6 +346,12 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
                 Marker plade som færdig
               </label>
             </div>
+
+            {pattern.thumbnail && (
+              <div className="rounded-lg overflow-hidden border bg-muted">
+                <PatternPreview thumbnail={pattern.thumbnail} />
+              </div>
+            )}
 
             <Button onClick={handlePrint} variant="outline" className="w-full">
               <Printer className="h-4 w-4 mr-2" />

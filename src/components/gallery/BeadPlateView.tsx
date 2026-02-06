@@ -21,6 +21,7 @@ interface BeadPlateViewProps {
   beads: Bead[];
   colors: Map<string, ColorInfo>;
   dimension: number;
+  containerSize?: { width: number; height: number };
 }
 
 // Determine if a color is light or dark for text contrast
@@ -32,7 +33,7 @@ const isLightColor = (hex: string): boolean => {
   return luminance > 0.5;
 };
 
-export const BeadPlateView: React.FC<BeadPlateViewProps> = ({ beads, colors, dimension }) => {
+export const BeadPlateView: React.FC<BeadPlateViewProps> = ({ beads, colors, dimension, containerSize }) => {
   // Create a 2D grid from beads array
   const grid: (Bead | null)[][] = Array.from({ length: dimension }, () =>
     Array.from({ length: dimension }, () => null)
@@ -44,7 +45,9 @@ export const BeadPlateView: React.FC<BeadPlateViewProps> = ({ beads, colors, dim
     }
   });
 
-  const beadSize = Math.max(20, Math.min(32, Math.floor(600 / dimension)));
+  const beadSize = containerSize
+    ? Math.max(16, Math.floor(Math.min(containerSize.width, containerSize.height) / (dimension + 1)))
+    : Math.max(20, Math.min(32, Math.floor(600 / dimension)));
 
   return (
     <div className="inline-block">
