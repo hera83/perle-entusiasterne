@@ -1,92 +1,93 @@
 
 
-# Docker-support til projektet
+# Fix Docker Build Fejl
 
-## Oversigt
-Tilfoej Docker-filer saa frontenden kan bygges og koeres lokalt paa din egen server. Ingen eksisterende filer aendres – kun tre nye filer tilfoejes i roden af projektet.
+## Problemer fundet
 
-## Hvad bliver tilfoejet
-
-### 1. Dockerfile (multi-stage build)
-Bygger projektet i to trin:
-
-- **Trin 1 (Build)**: Bruger Node.js til at installere dependencies og koere `npm run build`. Supabase-miljoevariabler injiceres som build-argumenter, da Vite indlejrer dem i den statiske kode under byggeprocessen.
-- **Trin 2 (Serve)**: Kopierer det byggede output til en letvaegtets Nginx-container der serverer filerne. Inkluderer en Nginx-konfiguration til korrekt SPA-routing (alle ruter peger tilbage til `index.html`).
-
-### 2. docker-compose.yml
-En simpel compose-fil der:
-
-- Bygger image fra Dockerfile
-- Eksponerer port 8080
-- Sender Supabase-miljoevariabler ind som build-argumenter via en `.env`-fil
-
-### 3. .dockerignore
-Ekskluderer unodvendige filer fra Docker-buildet (node_modules, .git, dist, osv.) for hurtigere builds.
-
-## Brug
-
-Efter tilfoejelsen kan du koere projektet med:
+### 1. Nginx `$uri` bliver tolket som shell-variabel
+I Dockerfile'ens `printf`-kommando bliver `$uri` tolket som en tom shell-variabel. Det medfører at Nginx-konfigurationen bliver ugyldig:
 
 ```text
-# Opret en .env fil med dine Supabase-vaerdier (allerede eksisterer i projektet)
-# Byg og start containeren
-docker-compose up --build
+# Nuvaerende (forkert - $uri forsvinder):
+try_files $uri $uri/ /index.html;
 
-# Aaben i browseren
-http://localhost:8080
+# Resultat efter shell-tolkning:
+try_files   /index.html;
 ```
 
-## Filer der oprettes
+**Fix**: Escape `$uri` som `\$uri` i printf-strengen.
 
-| Fil | Beskrivelse |
-|-----|-------------|
-| `Dockerfile` | Multi-stage build: Node.js build + Nginx serving |
-| `docker-compose.yml` | Simpel compose-opsaetning med port og env-variabler |
-| `.dockerignore` | Ekskluder node_modules, .git, dist m.m. |
+### 2. `npm ci` fejler med usynkroniseret lockfile
+Projektet bruger primaert `bun` (der findes en `bun.lockb`), saa `package-lock.json` kan vaere ude af sync. `npm ci` kraever at lockfilen matcher `package.json` praecist og fejler ellers.
 
-## Tekniske detaljer
+**Fix**: Brug `npm install --frozen-lockfile` eller bare `npm install` i stedet for `npm ci`.
 
-### Dockerfile-struktur
+## Aendringer
+
+### Dockerfile (opdateret)
+Filen skrives om med to rettelser:
+
+1. Linje 7: `RUN npm ci` aendres til `RUN npm install`
+2. Linje 38-39: `$uri` escapes som `\$uri` i printf-strengen
+
+Den opdaterede Dockerfile:
 
 ```text
-Stage 1: node:20-alpine
-  -> WORKDIR /app
-  -> Kopier package.json + package-lock.json
-  -> npm ci (installer dependencies)
-  -> Kopier resten af koden
-  -> ARG VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY, VITE_SUPABASE_PROJECT_ID
-  -> npm run build
+# Stage 1: Build
+FROM node:20-alpine AS build
 
-Stage 2: nginx:alpine
-  -> Kopier build-output fra stage 1 til /usr/share/nginx/html
-  -> Kopier custom nginx.conf (SPA-routing)
-  -> Eksponerer port 80
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm install              <-- aendret fra "npm ci"
+
+COPY . .
+
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_PUBLISHABLE_KEY
+ARG VITE_SUPABASE_PROJECT_ID
+
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_PUBLISHABLE_KEY=$VITE_SUPABASE_PUBLISHABLE_KEY
+ENV VITE_SUPABASE_PROJECT_ID=$VITE_SUPABASE_PROJECT_ID
+
+RUN npm run build
+
+# Stage 2: Serve
+FROM nginx:alpine
+
+COPY --from=build /app/dist /usr/share/nginx/html
+
+# SPA routing med korrekt escaped $uri
+RUN printf 'server {\n\
+    listen 80;\n\
+    server_name localhost;\n\
+    root /usr/share/nginx/html;\n\
+    index index.html;\n\
+\n\
+    location /assets/ {\n\
+        expires 1y;\n\
+        add_header Cache-Control "public, immutable";\n\
+    }\n\
+\n\
+    location / {\n\
+        try_files \$uri \$uri/ /index.html;\n\  <-- escaped
+    }\n\
+}\n' > /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
 ```
 
-### Nginx-konfiguration (indlejret i Dockerfile)
-En simpel konfiguration der:
+### Filer der aendres
 
-- Serverer statiske filer fra `/usr/share/nginx/html`
-- Redirecter alle ukendte ruter til `index.html` (noedvendigt for React Router)
-- Saetter korrekte cache-headers for assets
+| Fil | Aendring |
+|-----|----------|
+| `Dockerfile` | Fix `npm ci` til `npm install` + escape `$uri` |
 
-### docker-compose.yml
+Ingen andre filer behoever aendringer.
 
-```text
-services:
-  app:
-    build:
-      context: .
-      args:
-        - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
-        - VITE_SUPABASE_PUBLISHABLE_KEY=${VITE_SUPABASE_PUBLISHABLE_KEY}
-        - VITE_SUPABASE_PROJECT_ID=${VITE_SUPABASE_PROJECT_ID}
-    ports:
-      - "8080:80"
-```
-
-### Vigtige noter
-- Backend (database, auth, edge functions) forbliver paa Lovable Cloud – Docker koerer kun frontenden
-- `.env`-filen i projektet indeholder allerede de noedvendige variabler, saa `docker-compose` kan bruge dem direkte
-- Ingen eksisterende filer aendres overhovedet
+## Bemaekning
+Hvis buildet stadig fejler efter disse rettelser, kan du proeve at paste de sidste 20-30 linjer af fejlloggen direkte i chatten, saa kan jeg finde den praecise fejl.
 
