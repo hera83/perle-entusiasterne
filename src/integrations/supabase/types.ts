@@ -193,6 +193,35 @@ export type Database = {
         }
         Relationships: []
       }
+      pdf_downloads: {
+        Row: {
+          downloaded_at: string
+          id: string
+          pattern_id: string
+          user_id: string | null
+        }
+        Insert: {
+          downloaded_at?: string
+          id?: string
+          pattern_id: string
+          user_id?: string | null
+        }
+        Update: {
+          downloaded_at?: string
+          id?: string
+          pattern_id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pdf_downloads_pattern_id_fkey"
+            columns: ["pattern_id"]
+            isOneToOne: false
+            referencedRelation: "bead_patterns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string

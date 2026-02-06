@@ -3,7 +3,8 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Heart, Eye, RotateCcw, Pencil, Trash2, Calendar, User, Grid3X3, Hash, Lock, Globe } from 'lucide-react';
+import { Heart, Eye, RotateCcw, Pencil, Trash2, Calendar, User, Grid3X3, Hash, Lock, Globe, FileDown, Loader2 } from 'lucide-react';
+import { generatePatternPdf } from '@/lib/generatePatternPdf';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
@@ -52,6 +53,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
   const [progress, setProgress] = useState(0);
   const [totalPlates, setTotalPlates] = useState(0);
   const [completedPlates, setCompletedPlates] = useState(0);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   const canEdit = isAdmin || (user && user.id === pattern.user_id);
   const canDelete = isAdmin;
@@ -156,6 +158,25 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
     navigate(`/workshop/${pattern.id}`);
   };
 
+  const handleDownloadPdf = async () => {
+    if (isGeneratingPdf) return;
+    setIsGeneratingPdf(true);
+    try {
+      await generatePatternPdf({
+        id: pattern.id,
+        title: pattern.title,
+        category_name: pattern.category_name,
+        creator_name: pattern.creator_name,
+        plate_width: pattern.plate_width,
+        plate_height: pattern.plate_height,
+        plate_dimension: pattern.plate_dimension,
+        total_beads: pattern.total_beads,
+      });
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   const handleDelete = async () => {
     const { error } = await supabase
       .from('bead_patterns')
@@ -255,16 +276,16 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
         </div>
       </CardContent>
 
-      <CardFooter className="flex justify-between gap-2 pt-2">
-        <div className="flex gap-2">
-          <Button size="sm" onClick={onOpen}>
-            <Eye className="h-4 w-4 mr-1" />
+      <CardFooter className="flex justify-between gap-1 pt-2">
+        <div className="flex gap-1">
+          <Button size="sm" onClick={onOpen} className="h-7 text-xs px-2">
+            <Eye className="h-3.5 w-3.5 mr-1" />
             Åben
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button size="sm" variant="outline">
-                <RotateCcw className="h-4 w-4 mr-1" />
+              <Button size="sm" variant="outline" className="h-7 text-xs px-2">
+                <RotateCcw className="h-3.5 w-3.5 mr-1" />
                 Nulstil
               </Button>
             </AlertDialogTrigger>
@@ -282,20 +303,34 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          <Button 
+            size="sm" 
+            variant="outline" 
+            onClick={handleDownloadPdf} 
+            disabled={isGeneratingPdf}
+            className="h-7 text-xs px-2"
+          >
+            {isGeneratingPdf ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+            ) : (
+              <FileDown className="h-3.5 w-3.5 mr-1" />
+            )}
+            PDF
+          </Button>
         </div>
 
         {(canEdit || canDelete) && (
-          <div className="flex gap-2">
+          <div className="flex gap-1">
             {canEdit && (
-              <Button size="sm" variant="secondary" onClick={handleEdit}>
-                <Pencil className="h-4 w-4" />
+              <Button size="sm" variant="secondary" onClick={handleEdit} className="h-7 w-7 p-0">
+                <Pencil className="h-3.5 w-3.5" />
               </Button>
             )}
             {canDelete && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button size="sm" variant="destructive">
-                    <Trash2 className="h-4 w-4" />
+                  <Button size="sm" variant="destructive" className="h-7 w-7 p-0">
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>

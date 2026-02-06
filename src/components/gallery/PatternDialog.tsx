@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ChevronLeft, ChevronRight, Printer } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { BeadPlateView } from './BeadPlateView';
@@ -255,10 +255,6 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
   const canGoPrev = currentPosition.row > 1 || currentPosition.plate > 1;
   const canGoNext = pattern && (currentPosition.row < pattern.plate_height || currentPosition.plate < pattern.plate_width);
 
-  const handlePrint = () => {
-    window.print();
-  };
-
   if (!pattern) return null;
 
   return (
@@ -352,11 +348,6 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
                 <PatternPreview thumbnail={pattern.thumbnail} />
               </div>
             )}
-
-            <Button onClick={handlePrint} variant="outline" className="w-full">
-              <Printer className="h-4 w-4 mr-2" />
-              Print plade
-            </Button>
           </div>
         </div>
       </DialogContent>
