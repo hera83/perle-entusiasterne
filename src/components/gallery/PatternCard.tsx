@@ -158,6 +158,25 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
     navigate(`/workshop/${pattern.id}`);
   };
 
+  const handleDownloadPdf = async () => {
+    if (isGeneratingPdf) return;
+    setIsGeneratingPdf(true);
+    try {
+      await generatePatternPdf({
+        id: pattern.id,
+        title: pattern.title,
+        category_name: pattern.category_name,
+        creator_name: pattern.creator_name,
+        plate_width: pattern.plate_width,
+        plate_height: pattern.plate_height,
+        plate_dimension: pattern.plate_dimension,
+        total_beads: pattern.total_beads,
+      });
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   const handleDelete = async () => {
     const { error } = await supabase
       .from('bead_patterns')
