@@ -123,7 +123,9 @@ export function convertImageToBeads(
   sourceCanvas: HTMLCanvasElement,
   targetWidth: number,
   targetHeight: number,
-  colors: BeadColor[]
+  colors: BeadColor[],
+  removeBackground: boolean = false,
+  bgTolerance: number = 240
 ): { beadsByPlate: Map<string, BeadPixel[]>; colorStats: Map<string, number>; totalBeads: number } {
   // Scale down to target size
   const scaledCanvas = document.createElement('canvas');
