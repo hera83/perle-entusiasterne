@@ -352,7 +352,7 @@ const drawPlatePage = (
   }
 
   // Draw rows
-  const codeFontSize = Math.min(5, beadSize * 0.5);
+  const codeFontSize = Math.min(7, beadSize * 0.7);
   for (let row = 0; row < dimension; row++) {
     const cy = y + row * beadSize + beadSize / 2;
 

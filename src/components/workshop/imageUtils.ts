@@ -160,7 +160,7 @@ export function convertImageToBeads(
       const b = pixels[idx + 2];
       const a = pixels[idx + 3];
 
-      const colorId = findNearestColor(r, g, b, a, colorPalette);
+      const colorId = findNearestColor(r, g, b, a, colorPalette, removeBackground, bgTolerance);
       if (colorId) {
         allBeads.push({ row: y, col: x, colorId });
         colorStats.set(colorId, (colorStats.get(colorId) || 0) + 1);

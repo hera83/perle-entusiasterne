@@ -26,6 +26,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Check, ChevronsUpDown, Loader2, Upload, Crop, Settings, Eye, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
