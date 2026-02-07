@@ -498,6 +498,8 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
     setCategorySearch('');
     setSelectedCategory(null);
     setIsPublic(false);
+    setRemoveBackground(false);
+    setBgTolerance(240);
     setPlateWidth(1);
     setPlateHeight(1);
     setPlateDimension(29);
