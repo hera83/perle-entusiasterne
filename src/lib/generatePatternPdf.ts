@@ -310,8 +310,8 @@ const drawPlatePage = (
 
     const contrast = getContrastColor(color.hex_color);
     doc.setTextColor(contrast.r, contrast.g, contrast.b);
-    doc.setFontSize(4);
-    doc.text(color.code, lx + legendBeadRadius, ly + 0.5, { align: 'center' });
+    doc.setFontSize(5);
+    doc.text(color.code, lx + legendBeadRadius, ly + 0.6, { align: 'center' });
 
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(7);
