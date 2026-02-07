@@ -68,11 +68,11 @@ const drawBead = (
   doc.circle(x, y, radius, 'S');
 
   if (showCode && color.code) {
-    const actualFontSize = fontSize ?? Math.max(5, radius * 1.1);
+    const actualFontSize = fontSize ?? Math.max(5, radius * 1.6);
     const contrast = getContrastColor(color.hex_color);
     doc.setTextColor(contrast.r, contrast.g, contrast.b);
     doc.setFontSize(actualFontSize);
-    doc.text(color.code, x, y + actualFontSize * 0.12, { align: 'center' });
+    doc.text(color.code, x, y + actualFontSize * 0.13, { align: 'center' });
   }
 };
 
@@ -250,7 +250,7 @@ const drawBeadCountPage = (
     // Code in center
     const contrast = getContrastColor(item.color.hex_color);
     doc.setTextColor(contrast.r, contrast.g, contrast.b);
-    doc.setFontSize(6);
+    doc.setFontSize(7);
     doc.text(item.color.code, x + beadRadius, currentY + 0.7, { align: 'center' });
 
     // Name and count
@@ -310,7 +310,7 @@ const drawPlatePage = (
 
     const contrast = getContrastColor(color.hex_color);
     doc.setTextColor(contrast.r, contrast.g, contrast.b);
-    doc.setFontSize(5);
+    doc.setFontSize(6);
     doc.text(color.code, lx + legendBeadRadius, ly + 0.6, { align: 'center' });
 
     doc.setTextColor(0, 0, 0);
@@ -352,7 +352,7 @@ const drawPlatePage = (
   }
 
   // Draw rows
-  const codeFontSize = Math.min(7, beadSize * 0.7);
+  const codeFontSize = Math.min(9, beadSize * 0.9);
   for (let row = 0; row < dimension; row++) {
     const cy = y + row * beadSize + beadSize / 2;
 
