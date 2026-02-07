@@ -171,7 +171,15 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
       <DialogContent className="max-w-[95vw] max-h-[95vh] w-auto" hideCloseButton>
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between gap-4">
-            <span>Række {rowIndex + 1}, Plade {columnIndex + 1}</span>
+            <div className="flex items-center gap-2">
+              <span>Række {rowIndex + 1}, Plade {columnIndex + 1}</span>
+              {hasChanges && (
+                <span className="text-sm text-amber-600 dark:text-amber-400 flex items-center gap-1 font-normal">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  Ugemte ændringer
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
