@@ -379,7 +379,7 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
         setIsGeneratingPreview(false);
       }
     });
-  }, [image, cropRect, plateWidth, plateHeight, plateDimension, beadColors, toast]);
+  }, [image, cropRect, plateWidth, plateHeight, plateDimension, beadColors, removeBackground, bgTolerance, toast]);
 
   useEffect(() => {
     if (currentStep === 'preview') {
