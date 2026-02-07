@@ -26,6 +26,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Check, ChevronsUpDown, Loader2, Upload, Crop, Settings, Eye, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -90,6 +91,8 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
   const [categorySearch, setCategorySearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [isPublic, setIsPublic] = useState(false);
+  const [removeBackground, setRemoveBackground] = useState(false);
+  const [bgTolerance, setBgTolerance] = useState(240);
   const [plateWidth, setPlateWidth] = useState(1);
   const [plateHeight, setPlateHeight] = useState(1);
   const [plateDimension, setPlateDimension] = useState(29);
@@ -354,7 +357,7 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
         const targetWidth = plateWidth * plateDimension;
         const targetHeight = plateHeight * plateDimension;
 
-        const result = convertImageToBeads(croppedCanvas, targetWidth, targetHeight, beadColors);
+        const result = convertImageToBeads(croppedCanvas, targetWidth, targetHeight, beadColors, removeBackground, bgTolerance);
         const allBeads = result.beadsByPlate.get('all') || [];
 
         setPreviewBeads(allBeads);
@@ -376,7 +379,7 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
         setIsGeneratingPreview(false);
       }
     });
-  }, [image, cropRect, plateWidth, plateHeight, plateDimension, beadColors, toast]);
+  }, [image, cropRect, plateWidth, plateHeight, plateDimension, beadColors, removeBackground, bgTolerance, toast]);
 
   useEffect(() => {
     if (currentStep === 'preview') {
@@ -495,6 +498,8 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
     setCategorySearch('');
     setSelectedCategory(null);
     setIsPublic(false);
+    setRemoveBackground(false);
+    setBgTolerance(240);
     setPlateWidth(1);
     setPlateHeight(1);
     setPlateDimension(29);
@@ -782,6 +787,38 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
                   onCheckedChange={setIsPublic}
                 />
               </div>
+
+              {/* Background removal toggle */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="import-removeBg">Fjern baggrund</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Fjerner hvide/lyse pixels og gør dem gennemsigtige.
+                  </p>
+                </div>
+                <Switch
+                  id="import-removeBg"
+                  checked={removeBackground}
+                  onCheckedChange={setRemoveBackground}
+                />
+              </div>
+
+              {/* Background tolerance slider */}
+              {removeBackground && (
+                <div className="grid gap-2">
+                  <Label>Baggrundstolerance ({bgTolerance})</Label>
+                  <Slider
+                    min={200}
+                    max={255}
+                    step={1}
+                    value={[bgTolerance]}
+                    onValueChange={([v]) => setBgTolerance(v)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Lavere værdi = kun de hvideste pixels fjernes. Højere = flere lyse farver fjernes.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

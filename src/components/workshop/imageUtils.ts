@@ -41,18 +41,20 @@ function colorDistance(c1: RGB, c2: RGB): number {
   );
 }
 
-/** Find the nearest bead color for an RGB pixel. Returns null for near-white/transparent pixels. */
+/** Find the nearest bead color for an RGB pixel. Returns null for transparent/background pixels. */
 function findNearestColor(
   r: number,
   g: number,
   b: number,
   a: number,
-  colorPalette: Array<{ id: string; rgb: RGB }>
+  colorPalette: Array<{ id: string; rgb: RGB }>,
+  removeBackground: boolean = false,
+  bgTolerance: number = 240
 ): string | null {
   // Skip transparent pixels
   if (a < 128) return null;
-  // Skip near-white pixels
-  if (r > 240 && g > 240 && b > 240) return null;
+  // Skip near-white pixels only when background removal is enabled
+  if (removeBackground && r > bgTolerance && g > bgTolerance && b > bgTolerance) return null;
 
   const pixel: RGB = { r, g, b };
   let nearestId: string | null = null;
@@ -121,7 +123,9 @@ export function convertImageToBeads(
   sourceCanvas: HTMLCanvasElement,
   targetWidth: number,
   targetHeight: number,
-  colors: BeadColor[]
+  colors: BeadColor[],
+  removeBackground: boolean = false,
+  bgTolerance: number = 240
 ): { beadsByPlate: Map<string, BeadPixel[]>; colorStats: Map<string, number>; totalBeads: number } {
   // Scale down to target size
   const scaledCanvas = document.createElement('canvas');
@@ -156,7 +160,7 @@ export function convertImageToBeads(
       const b = pixels[idx + 2];
       const a = pixels[idx + 3];
 
-      const colorId = findNearestColor(r, g, b, a, colorPalette);
+      const colorId = findNearestColor(r, g, b, a, colorPalette, removeBackground, bgTolerance);
       if (colorId) {
         allBeads.push({ row: y, col: x, colorId });
         colorStats.set(colorId, (colorStats.get(colorId) || 0) + 1);
