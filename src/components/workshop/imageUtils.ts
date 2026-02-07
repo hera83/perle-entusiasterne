@@ -41,18 +41,20 @@ function colorDistance(c1: RGB, c2: RGB): number {
   );
 }
 
-/** Find the nearest bead color for an RGB pixel. Returns null for near-white/transparent pixels. */
+/** Find the nearest bead color for an RGB pixel. Returns null for transparent/background pixels. */
 function findNearestColor(
   r: number,
   g: number,
   b: number,
   a: number,
-  colorPalette: Array<{ id: string; rgb: RGB }>
+  colorPalette: Array<{ id: string; rgb: RGB }>,
+  removeBackground: boolean = false,
+  bgTolerance: number = 240
 ): string | null {
   // Skip transparent pixels
   if (a < 128) return null;
-  // Skip near-white pixels
-  if (r > 240 && g > 240 && b > 240) return null;
+  // Skip near-white pixels only when background removal is enabled
+  if (removeBackground && r > bgTolerance && g > bgTolerance && b > bgTolerance) return null;
 
   const pixel: RGB = { r, g, b };
   let nearestId: string | null = null;
