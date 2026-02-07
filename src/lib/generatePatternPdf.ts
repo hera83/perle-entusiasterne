@@ -250,8 +250,8 @@ const drawBeadCountPage = (
     // Code in center
     const contrast = getContrastColor(item.color.hex_color);
     doc.setTextColor(contrast.r, contrast.g, contrast.b);
-    doc.setFontSize(5);
-    doc.text(item.color.code, x + beadRadius, currentY + 0.6, { align: 'center' });
+    doc.setFontSize(6);
+    doc.text(item.color.code, x + beadRadius, currentY + 0.7, { align: 'center' });
 
     // Name and count
     doc.setTextColor(0, 0, 0);
