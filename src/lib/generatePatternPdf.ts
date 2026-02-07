@@ -49,7 +49,7 @@ const drawBead = (
   radius: number,
   color: ColorInfo | null,
   showCode: boolean = true,
-  fontSize: number = 5
+  fontSize?: number
 ) => {
   if (!color) {
     // Empty bead - light gray
@@ -68,10 +68,11 @@ const drawBead = (
   doc.circle(x, y, radius, 'S');
 
   if (showCode && color.code) {
+    const actualFontSize = fontSize ?? Math.max(5, radius * 1.1);
     const contrast = getContrastColor(color.hex_color);
     doc.setTextColor(contrast.r, contrast.g, contrast.b);
-    doc.setFontSize(fontSize);
-    doc.text(color.code, x, y + fontSize * 0.12, { align: 'center' });
+    doc.setFontSize(actualFontSize);
+    doc.text(color.code, x, y + actualFontSize * 0.12, { align: 'center' });
   }
 };
 
