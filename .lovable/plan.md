@@ -1,148 +1,53 @@
 
 
-# PDF skriftstorrelse + Baggrundsfjerning som valgfrit step
+# Flyt "Ugemte ændringer" til header + Større PDF-skrifttype
 
-## 1. Storre skrifttype i PDF-perler
+## 1. Flyt "Ugemte ændringer" op i headeren
 
-Problemet er at `fontSize` i `drawBead`-funktionen er sat til 5 som default, og plade-siderne beregner `codeFontSize = Math.min(5, beadSize * 0.5)`. Disse vaerdier er for smaa til at vaere laesbare.
+Problemet er at teksten "Ugemte ændringer" vises i bunden af dialogen som et ekstra element der kun dukker op ved første ændring, hvilket skubber layoutet.
 
-### AEndringer i `src/lib/generatePatternPdf.ts`:
+### Løsning
 
-- **drawBead default fontSize**: aendres fra `5` til `fontSize` beregnet som `radius * 1.1` (saa teksten skalerer med perlens stoerrelse)
-- **Side 2 (perleoptaelling)**: `beadRadius` er `3` - fonten aendres fra `5` til `6`
-- **Side 3+ (pladesider)**: `codeFontSize` aendres fra `Math.min(5, beadSize * 0.5)` til `Math.min(7, beadSize * 0.7)` saa den fylder mere af perlen
-- **Legende-perlerne**: fonten aendres fra `4` til `5`
-- Vertikal justering af tekst i perler opdateres ogsaa saa den centreres bedre
+Fjern den separate blok i bunden (linje 265-270) og flyt indikatoren op i headeren ved siden af "Række X, Plade Y" teksten. Den vises altid i headeren -- enten som en synlig amber-indikator eller som usynlig placeholder -- så headeren har fast højde uanset om der er ændringer.
 
----
+**Ændring i `src/components/workshop/PlateEditorDialog.tsx`:**
 
-## 2. Baggrundsfjerning som valgfrit step med tolerancejustering
-
-### Hvad sker der i dag
-
-I `imageUtils.ts` springer `findNearestColor` automatisk over:
-- Transparente pixels (alpha < 128)
-- Naesten-hvide pixels (r > 240 AND g > 240 AND b > 240)
-
-Det betyder at hvid/lys baggrund altid fjernes - brugeren har ingen kontrol over dette.
-
-### Ny tilgang
-
-Tilfoej to nye kontroller i "Indstillinger"-stepet i ImportImageDialog:
-
-1. **"Fjern baggrund" toggle** (default: FRA) - naar slaaet fra, mappes ALLE pixels til naermeste perlefarve
-2. **"Baggrundstolerance" slider** (kun synlig naar toggle er TIL, range 200-255, default 240) - styrer hvor "hvid" en pixel skal vaere for at blive behandlet som baggrund
-
-### Filer der aendres
-
-| Fil | AEndring |
-|-----|---------|
-| `src/lib/generatePatternPdf.ts` | Stoerre fontstoerrelser i drawBead, perleoptaelling og pladesider |
-| `src/components/workshop/imageUtils.ts` | convertImageToBeads faar nye parametre: removeBackground + tolerance |
-| `src/components/workshop/ImportImageDialog.tsx` | Ny toggle + slider i settings-stepet, parametre sendes videre |
-
-### Tekniske detaljer
-
-#### imageUtils.ts - findNearestColor
+I DialogTitle, efter `<span>Række {rowIndex + 1}, Plade {columnIndex + 1}</span>`, tilføjes:
 
 ```text
-// FOER:
-function findNearestColor(r, g, b, a, colorPalette) {
-  if (a < 128) return null;
-  if (r > 240 && g > 240 && b > 240) return null;
-  ...
-}
-
-// EFTER: tilfoej removeBackground og tolerance parametre
-function findNearestColor(r, g, b, a, colorPalette, removeBackground, bgTolerance) {
-  if (a < 128) return null;  // transparente pixels springes altid over
-  if (removeBackground && r > bgTolerance && g > bgTolerance && b > bgTolerance) return null;
-  ...
-}
-```
-
-#### imageUtils.ts - convertImageToBeads
-
-Funktionen faar to nye valgfrie parametre:
-
-```text
-export function convertImageToBeads(
-  sourceCanvas: HTMLCanvasElement,
-  targetWidth: number,
-  targetHeight: number,
-  colors: BeadColor[],
-  removeBackground: boolean = true,   // NY - default true for bagudkompatibilitet
-  bgTolerance: number = 240           // NY
-)
-```
-
-#### ImportImageDialog.tsx - Nyt i settings-stepet
-
-Tilfoej efter "Offentlig opskrift" toggle:
-
-```text
-// Ny state
-const [removeBackground, setRemoveBackground] = useState(false);
-const [bgTolerance, setBgTolerance] = useState(240);
-
-// I settings UI:
-<div className="flex items-center justify-between">
-  <div className="space-y-0.5">
-    <Label>Fjern baggrund</Label>
-    <p className="text-xs text-muted-foreground">
-      Fjerner hvide/lyse pixels og goer dem gennemsigtige.
-    </p>
-  </div>
-  <Switch checked={removeBackground} onCheckedChange={setRemoveBackground} />
-</div>
-
-{removeBackground && (
-  <div className="grid gap-2">
-    <Label>Baggrundstolerance ({bgTolerance})</Label>
-    <Slider min={200} max={255} value={[bgTolerance]} onValueChange={([v]) => setBgTolerance(v)} />
-    <p className="text-xs text-muted-foreground">
-      Lavere vaerdi = kun de hvideste pixels fjernes. Hoejere = flere lyse farver fjernes.
-    </p>
-  </div>
+{hasChanges && (
+  <span className="text-sm text-amber-600 dark:text-amber-400 flex items-center gap-1 font-normal">
+    <span className="w-2 h-2 rounded-full bg-amber-500" />
+    Ugemte ændringer
+  </span>
 )}
 ```
 
-Parametrene sendes videre til `convertImageToBeads` i `generatePreview`:
+Og den eksisterende blok i bunden (linje 265-270) fjernes helt.
 
-```text
-const result = convertImageToBeads(
-  croppedCanvas, targetWidth, targetHeight, beadColors,
-  removeBackground, bgTolerance
-);
-```
+---
 
-#### generatePatternPdf.ts - Stoerre fontstoerrelser
+## 2. Større skrifttype i PDF-perler
 
-```text
-// drawBead: fontSize default aendres fra 5 til beregnet vaerdi
-const drawBead = (doc, x, y, radius, color, showCode = true, fontSize?: number) => {
-  ...
-  if (showCode && color.code) {
-    const actualFontSize = fontSize ?? Math.max(5, radius * 1.1);
-    doc.setFontSize(actualFontSize);
-    doc.text(color.code, x, y + actualFontSize * 0.12, { align: 'center' });
-  }
-};
+Teksten i perlerne er stadig for lille. Skriftstørrelsen skaleres nu markant op.
 
-// Side 2: beadRadius er 3, fontSize aendres fra 5 til 6
-doc.setFontSize(6);
+### Ændringer i `src/lib/generatePatternPdf.ts`:
 
-// Side 3+: codeFontSize aendres
-const codeFontSize = Math.min(7, beadSize * 0.7);
+**drawBead (linje 71):** Ændrer default fontSize fra `Math.max(5, radius * 1.1)` til `Math.max(5, radius * 1.6)` -- dette gør teksten ca. 45% større og fylder mere af perlen.
 
-// Legende: fontSize aendres fra 4 til 5
-doc.setFontSize(5);
-```
+**Side 2 - perleoptælling (linje 253):** Ændrer fontSize fra `6` til `7` for koden inde i perlen.
 
-### Forventet resultat
+**Side 3+ - pladesider (linje 355):** Ændrer `codeFontSize` fra `Math.min(7, beadSize * 0.7)` til `Math.min(9, beadSize * 0.9)` for bedre læsbarhed.
 
-- PDF: farvekoderne i perlerne er tydeligt laesbare uden at aendre perlens stoerrelse
-- Billedimport: brugeren kan valgfrit slaa baggrundsfjerning til/fra og justere tolerancen
-- Default er INGEN baggrundsfjerning (alle pixels mappes til naermeste farve)
-- Naar baggrundsfjerning er slaaet til, virker det praecis som foer med justerbar tolerance
+**Legende-perler (linje 313):** Ændrer fontSize fra `5` til `6`.
 
+**Vertikal centrering (linje 75):** Ændrer `y + actualFontSize * 0.12` til `y + actualFontSize * 0.13` for bedre centrering med den større skrift.
+
+---
+
+## Filer der ændres
+
+| Fil | Ændring |
+|-----|---------|
+| `src/components/workshop/PlateEditorDialog.tsx` | Flyt "Ugemte ændringer" fra bund til header |
+| `src/lib/generatePatternPdf.ts` | Øg skriftstørrelse i drawBead, perleoptælling, pladesider og legende |
