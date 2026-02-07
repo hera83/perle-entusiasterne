@@ -785,6 +785,38 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
                   onCheckedChange={setIsPublic}
                 />
               </div>
+
+              {/* Background removal toggle */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="import-removeBg">Fjern baggrund</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Fjerner hvide/lyse pixels og gør dem gennemsigtige.
+                  </p>
+                </div>
+                <Switch
+                  id="import-removeBg"
+                  checked={removeBackground}
+                  onCheckedChange={setRemoveBackground}
+                />
+              </div>
+
+              {/* Background tolerance slider */}
+              {removeBackground && (
+                <div className="grid gap-2">
+                  <Label>Baggrundstolerance ({bgTolerance})</Label>
+                  <Slider
+                    min={200}
+                    max={255}
+                    step={1}
+                    value={[bgTolerance]}
+                    onValueChange={([v]) => setBgTolerance(v)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Lavere værdi = kun de hvideste pixels fjernes. Højere = flere lyse farver fjernes.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
