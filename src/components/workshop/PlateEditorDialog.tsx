@@ -270,12 +270,6 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
           </div>
         </div>
 
-        {hasChanges && (
-          <div className="text-sm text-amber-600 dark:text-amber-400 flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-amber-500" />
-            Ugemte ændringer
-          </div>
-        )}
       </DialogContent>
     </Dialog>
   );
