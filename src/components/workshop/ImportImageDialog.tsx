@@ -357,7 +357,7 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
         const targetWidth = plateWidth * plateDimension;
         const targetHeight = plateHeight * plateDimension;
 
-        const result = convertImageToBeads(croppedCanvas, targetWidth, targetHeight, beadColors);
+        const result = convertImageToBeads(croppedCanvas, targetWidth, targetHeight, beadColors, removeBackground, bgTolerance);
         const allBeads = result.beadsByPlate.get('all') || [];
 
         setPreviewBeads(allBeads);
