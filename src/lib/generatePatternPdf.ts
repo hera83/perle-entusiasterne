@@ -68,11 +68,11 @@ const drawBead = (
   doc.circle(x, y, radius, 'S');
 
   if (showCode && color.code) {
-    const actualFontSize = fontSize ?? Math.max(5, radius * 1.1);
+    const actualFontSize = fontSize ?? Math.max(5, radius * 1.6);
     const contrast = getContrastColor(color.hex_color);
     doc.setTextColor(contrast.r, contrast.g, contrast.b);
     doc.setFontSize(actualFontSize);
-    doc.text(color.code, x, y + actualFontSize * 0.12, { align: 'center' });
+    doc.text(color.code, x, y + actualFontSize * 0.13, { align: 'center' });
   }
 };
 
