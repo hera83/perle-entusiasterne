@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useState, useRef, useMemo,
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
+const REFRESH_INTERVAL_MS = 55 * 60 * 1000; // 55 minutes - safe for 60-minute tokens
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -31,6 +33,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const wasLoggedInRef = useRef(false);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRefreshingRef = useRef(false);
+  const lastRefreshRef = useRef<number>(Date.now());
 
   const checkAdminRole = async (userId: string): Promise<boolean> => {
     try {
@@ -70,28 +73,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const scheduleRefresh = useCallback((session: Session) => {
-    // Clear existing timer
+  // Clock-skew-resistant: uses FIXED relative interval, never absolute expires_at
+  const scheduleRefresh = useCallback(() => {
     if (refreshTimerRef.current) {
       clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = null;
     }
 
-    if (!session.expires_at) return;
-
-    const expiresAt = session.expires_at * 1000; // seconds -> ms
-    const now = Date.now();
-    const refreshIn = expiresAt - now - 60_000; // 60 sec before expiry
-
-    if (refreshIn <= 0) {
-      // Already expired or very close - refresh immediately
-      performRefresh();
-      return;
-    }
-
     refreshTimerRef.current = setTimeout(() => {
       performRefresh();
-    }, refreshIn);
+    }, REFRESH_INTERVAL_MS);
+
+    lastRefreshRef.current = Date.now();
   }, [performRefresh]);
 
   useEffect(() => {
@@ -105,7 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (event === 'TOKEN_REFRESHED') {
           if (session) {
             sessionRef.current = session;
-            scheduleRefresh(session);
+            scheduleRefresh(); // Reset 55-min timer (never immediate)
           }
           return;
         }
@@ -125,14 +118,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             currentUserIdRef.current = session.user.id;
             sessionRef.current = session;
             setUser(session.user);
-            scheduleRefresh(session);
+            scheduleRefresh();
             checkAdminRole(session.user.id).then(result => {
               if (isMounted) setIsAdmin(result);
             });
           } else {
             // Same user, just update session ref and reschedule
             sessionRef.current = session;
-            scheduleRefresh(session);
+            scheduleRefresh();
           }
         }
       }
@@ -141,10 +134,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // INITIAL load (controls loading state)
     const initializeAuth = async () => {
       try {
-        // STOP Supabase's built-in auto-refresh to prevent token storms
-        supabase.auth.stopAutoRefresh();
-
+        // FIRST get session (this awaits _initialize() internally)
         const { data: { session } } = await supabase.auth.getSession();
+
+        // NOW _initialize() is done and auto-refresh has started.
+        // Stop it AFTER _initialize() so it actually works.
+        await supabase.auth.stopAutoRefresh();
+
         if (!isMounted) return;
 
         sessionRef.current = session ?? null;
@@ -153,7 +149,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (session?.user) {
           wasLoggedInRef.current = true;
-          scheduleRefresh(session);
+          scheduleRefresh(); // Fixed 55-min timer
           const adminResult = await checkAdminRole(session.user.id);
           if (isMounted) setIsAdmin(adminResult);
         }
@@ -166,14 +162,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initializeAuth();
 
+    // Manual visibility handler (since we stopped Supabase's handler)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && sessionRef.current) {
+        const elapsed = Date.now() - lastRefreshRef.current;
+        if (elapsed > 5 * 60 * 1000) { // More than 5 min since last refresh
+          performRefresh();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
       isMounted = false;
       subscription.unsubscribe();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (refreshTimerRef.current) {
         clearTimeout(refreshTimerRef.current);
       }
     };
-  }, [scheduleRefresh]);
+  }, [scheduleRefresh, performRefresh]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
