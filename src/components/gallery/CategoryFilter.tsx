@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-interface Category {
+interface CategoryWithCount {
   id: string;
   name: string;
+  count: number;
 }
 
 interface CategoryFilterProps {
@@ -17,17 +18,22 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({
   selectedCategory,
   onCategoryChange,
 }) => {
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categories, setCategories] = useState<CategoryWithCount[]>([]);
 
   useEffect(() => {
     const fetchCategories = async () => {
       const { data, error } = await supabase
         .from('categories')
-        .select('id, name')
+        .select('id, name, bead_patterns(count)')
         .order('name');
 
       if (!error && data) {
-        setCategories(data);
+        const mapped: CategoryWithCount[] = data.map((cat: any) => ({
+          id: cat.id,
+          name: cat.name,
+          count: cat.bead_patterns?.[0]?.count ?? 0,
+        }));
+        setCategories(mapped.filter(c => c.count > 0));
       }
     };
 
@@ -39,30 +45,26 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({
   }
 
   return (
-    <div className="flex flex-wrap gap-2">
-      <span className="text-sm text-muted-foreground self-center mr-2">Kategori:</span>
-      <Badge
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-sm font-medium text-muted-foreground mr-1">Kategori:</span>
+      <Button
+        size="sm"
         variant={selectedCategory === null ? 'default' : 'outline'}
-        className={cn(
-          'cursor-pointer transition-colors',
-          selectedCategory === null && 'bg-primary'
-        )}
+        className="h-8 text-sm"
         onClick={() => onCategoryChange(null)}
       >
         Alle
-      </Badge>
+      </Button>
       {categories.map((category) => (
-        <Badge
+        <Button
           key={category.id}
+          size="sm"
           variant={selectedCategory === category.id ? 'default' : 'outline'}
-          className={cn(
-            'cursor-pointer transition-colors',
-            selectedCategory === category.id && 'bg-primary'
-          )}
+          className="h-8 text-sm"
           onClick={() => onCategoryChange(category.id)}
         >
-          {category.name}
-        </Badge>
+          {category.name} ({category.count})
+        </Button>
       ))}
     </div>
   );

@@ -191,20 +191,25 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
     }
   };
 
+  const isNew = (Date.now() - new Date(pattern.created_at).getTime()) < 7 * 24 * 60 * 60 * 1000;
+
   return (
     <Card className="flex flex-col h-full hover:shadow-lg transition-shadow">
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between gap-2">
+      <CardHeader className="p-3 pb-1">
+        <div className="flex items-start justify-between gap-1">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <CardTitle className="text-lg line-clamp-1">{pattern.title}</CardTitle>
+            <div className="flex items-center gap-1.5">
+              <CardTitle className="text-base line-clamp-1">{pattern.title}</CardTitle>
               {pattern.is_public === false && (
-                <Lock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                <Lock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+              )}
+              {isNew && (
+                <Badge className="bg-green-500 text-white text-[10px] px-1.5 py-0 leading-4">Ny</Badge>
               )}
             </div>
-            <div className="flex items-center gap-1 mt-1 flex-wrap">
+            <div className="flex items-center gap-1 mt-0.5 flex-wrap">
               {pattern.category_name && (
-                <Badge variant="secondary">
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                   {pattern.category_name}
                 </Badge>
               )}
@@ -214,63 +219,62 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
             variant="ghost"
             size="icon"
             onClick={toggleFavorite}
-            className={isFavorite ? 'text-red-500 hover:text-red-600' : ''}
+            className={`h-7 w-7 ${isFavorite ? 'text-red-500 hover:text-red-600' : ''}`}
             title={isFavorite ? 'Fjern fra favoritter' : 'Tilføj til favoritter'}
           >
-            <Heart className={`h-5 w-5 ${isFavorite ? 'fill-current' : ''}`} />
+            <Heart className={`h-4 w-4 ${isFavorite ? 'fill-current' : ''}`} />
           </Button>
         </div>
       </CardHeader>
 
-      <CardContent className="flex-1 pb-2">
-        <div className="grid grid-cols-2 gap-4">
+      <CardContent className="flex-1 p-3 pt-1 pb-1">
+        <div className="grid grid-cols-2 gap-3">
           {/* Preview */}
           <div className="aspect-square bg-muted rounded-md overflow-hidden">
             <PatternPreview thumbnail={pattern.thumbnail} />
           </div>
 
           {/* Metadata */}
-          <div className="space-y-2 text-sm">
-            {/* Privat/Offentlig status */}
-            <div className="flex items-center gap-2 text-muted-foreground">
+          <div className="space-y-1 text-xs">
+            <div className="flex items-center gap-1.5 text-muted-foreground">
               {pattern.is_public === false ? (
                 <>
-                  <Lock className="h-4 w-4 flex-shrink-0" />
+                  <Lock className="h-3.5 w-3.5 flex-shrink-0" />
                   <span>Privat</span>
                 </>
               ) : (
                 <>
-                  <Globe className="h-4 w-4 flex-shrink-0" />
+                  <Globe className="h-3.5 w-3.5 flex-shrink-0" />
                   <span>Offentlig</span>
                 </>
               )}
             </div>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Calendar className="h-4 w-4 flex-shrink-0" />
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <Calendar className="h-3.5 w-3.5 flex-shrink-0" />
               <span className="truncate">
                 {format(new Date(pattern.created_at), 'd. MMM yyyy', { locale: da })}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <User className="h-4 w-4 flex-shrink-0" />
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <User className="h-3.5 w-3.5 flex-shrink-0" />
               <span className="truncate">{pattern.creator_name || 'Ukendt'}</span>
             </div>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Grid3X3 className="h-4 w-4 flex-shrink-0" />
-              <span>{pattern.plate_width} x {pattern.plate_height} plader</span>
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <Grid3X3 className="h-3.5 w-3.5 flex-shrink-0" />
+              <span>{pattern.plate_width}x{pattern.plate_height} plader</span>
             </div>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Hash className="h-4 w-4 flex-shrink-0" />
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <Hash className="h-3.5 w-3.5 flex-shrink-0" />
               <span>{pattern.total_beads.toLocaleString('da-DK')} perler</span>
             </div>
 
             {/* Progress */}
-            <div className="pt-2">
-              <div className="flex justify-between text-xs mb-1">
+            <div className="pt-1">
+              <div className="flex justify-between text-[10px] mb-0.5">
                 <span>Progress</span>
-                <span>{completedPlates}/{totalPlates} plader</span>
+                <span>{completedPlates}/{totalPlates}</span>
               </div>
-              <Progress value={progress} className="h-2" />
+              <Progress value={progress} className="h-1.5" />
             </div>
           </div>
         </div>
