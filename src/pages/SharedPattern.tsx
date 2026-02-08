@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
 import { BeadPlateView } from '@/components/gallery/BeadPlateView';
 import { PatternPreview } from '@/components/gallery/PatternPreview';
 import { Button } from '@/components/ui/button';
