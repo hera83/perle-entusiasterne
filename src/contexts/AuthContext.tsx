@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
 
 interface AuthContextType {
   user: User | null;
@@ -30,6 +29,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isAdmin, setIsAdmin] = useState(false);
   const currentUserIdRef = useRef<string | null>(null);
   const wasLoggedInRef = useRef(false);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isRefreshingRef = useRef(false);
 
   const checkAdminRole = async (userId: string): Promise<boolean> => {
     try {
@@ -52,20 +53,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const performRefresh = useCallback(async () => {
+    if (isRefreshingRef.current) return;
+    isRefreshingRef.current = true;
+
+    try {
+      const { error } = await supabase.auth.refreshSession();
+      if (error) {
+        console.error('Session refresh failed:', error.message);
+      }
+      // TOKEN_REFRESHED event handler takes care of the rest
+    } catch (err) {
+      console.error('Error refreshing session:', err);
+    } finally {
+      isRefreshingRef.current = false;
+    }
+  }, []);
+
+  const scheduleRefresh = useCallback((session: Session) => {
+    // Clear existing timer
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+
+    if (!session.expires_at) return;
+
+    const expiresAt = session.expires_at * 1000; // seconds -> ms
+    const now = Date.now();
+    const refreshIn = expiresAt - now - 60_000; // 60 sec before expiry
+
+    if (refreshIn <= 0) {
+      // Already expired or very close - refresh immediately
+      performRefresh();
+      return;
+    }
+
+    refreshTimerRef.current = setTimeout(() => {
+      performRefresh();
+    }, refreshIn);
+  }, [performRefresh]);
+
   useEffect(() => {
     let isMounted = true;
 
-    // Listener for ONGOING auth changes
-    // Supabase's built-in autoRefreshToken handles token refresh automatically.
-    // We only react to state changes here — no manual refresh scheduling.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         if (!isMounted) return;
 
-        // TOKEN_REFRESHED: update ref only, no re-render needed
+        // TOKEN_REFRESHED: update ref and reschedule, no re-render needed
         if (event === 'TOKEN_REFRESHED') {
           if (session) {
             sessionRef.current = session;
+            scheduleRefresh(session);
           }
           return;
         }
@@ -73,10 +113,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // INITIAL_SESSION is handled by initializeAuth below
         if (event === 'INITIAL_SESSION') return;
 
-        // SIGNED_OUT: IGNORER FULDSTÆNDIGT
-        // Vi rydder KUN brugerstate via den eksplicitte signOut() funktion.
-        // Dette gør appen immun over for Supabase-klientens interne SIGNED_OUT events
-        // (fx fra token reuse detection, failed refresh, rate limiting).
+        // SIGNED_OUT: IGNORE completely
+        // We only clear user state via the explicit signOut() function.
         if (event === 'SIGNED_OUT') {
           return;
         }
@@ -87,12 +125,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             currentUserIdRef.current = session.user.id;
             sessionRef.current = session;
             setUser(session.user);
+            scheduleRefresh(session);
             checkAdminRole(session.user.id).then(result => {
               if (isMounted) setIsAdmin(result);
             });
           } else {
-            // Same user, just update session ref
+            // Same user, just update session ref and reschedule
             sessionRef.current = session;
+            scheduleRefresh(session);
           }
         }
       }
@@ -101,6 +141,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // INITIAL load (controls loading state)
     const initializeAuth = async () => {
       try {
+        // STOP Supabase's built-in auto-refresh to prevent token storms
+        supabase.auth.stopAutoRefresh();
+
         const { data: { session } } = await supabase.auth.getSession();
         if (!isMounted) return;
 
@@ -110,6 +153,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (session?.user) {
           wasLoggedInRef.current = true;
+          scheduleRefresh(session);
           const adminResult = await checkAdminRole(session.user.id);
           if (isMounted) setIsAdmin(adminResult);
         }
@@ -125,8 +169,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       isMounted = false;
       subscription.unsubscribe();
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+      }
     };
-  }, []);
+  }, [scheduleRefresh]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
@@ -137,14 +184,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signOut = useCallback(async () => {
-    // Ryd ALLE auth-relaterede state DIREKTE - vi stoler ikke på SIGNED_OUT event
+    // Clear refresh timer
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+
+    // Clear ALL auth-related state DIRECTLY
     currentUserIdRef.current = null;
     sessionRef.current = null;
     wasLoggedInRef.current = false;
     setUser(null);
     setIsAdmin(false);
 
-    // Kald Supabase signOut (state er allerede ryddet, SIGNED_OUT event ignoreres)
     try {
       await supabase.auth.signOut();
     } catch (err) {
@@ -156,7 +208,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { session } } = await supabase.auth.getSession();
     if (session) return true;
 
-    // Session er virkelig væk - ryd state
+    // Session is truly gone - clear state
     currentUserIdRef.current = null;
     sessionRef.current = null;
     setUser(null);
