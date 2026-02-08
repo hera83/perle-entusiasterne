@@ -11,6 +11,7 @@ import Favorites from "./pages/Favorites";
 import Administration from "./pages/Administration";
 import Workshop from "./pages/Workshop";
 import NotFound from "./pages/NotFound";
+import SharedPattern from "./pages/SharedPattern";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1 } },
