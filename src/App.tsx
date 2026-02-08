@@ -32,6 +32,7 @@ const App = () => (
               <Route path="/administration" element={<Administration />} />
               <Route path="/workshop" element={<Workshop />} />
               <Route path="/workshop/:patternId" element={<Workshop />} />
+              <Route path="/opskrift/:shareToken" element={<SharedPattern />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

@@ -430,6 +430,20 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
                 <FileDown className="h-3.5 w-3.5" />
               )}
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleShareLink}
+              disabled={isCopyingLink}
+              className="h-7 w-7 p-0"
+              title="Kopiér delingslink"
+            >
+              {isCopyingLink ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Link2 className="h-3.5 w-3.5" />
+              )}
+            </Button>
           </div>
 
           {/* Right: manage buttons (admin/owner only) */}
