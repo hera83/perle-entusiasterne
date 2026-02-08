@@ -9,8 +9,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { InteractiveBeadGrid } from './InteractiveBeadGrid';
 import { EditorToolbar } from './EditorToolbar';
-import { Save, X, PanelLeftClose, PanelLeft } from 'lucide-react';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { Save, X } from 'lucide-react';
 
 interface Bead {
   row: number;
@@ -55,22 +54,6 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
   const [replaceFromColorId, setReplaceFromColorId] = useState<string | null>(null);
   const [replaceToColorId, setReplaceToColorId] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
-  const [forceCompact, setForceCompact] = useState(false);
-  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
-  
-  const isMobile = useIsMobile();
-
-  // Track window width for responsive layout
-  useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  // Auto compact mode when mobile or narrow screen
-  const autoCompact = isMobile || windowWidth < 900;
-  // User can also force compact mode manually
-  const isCompact = forceCompact || autoCompact;
 
   // Initialize beads when dialog opens
   useEffect(() => {
@@ -95,7 +78,6 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
       const existingIndex = prev.findIndex(b => b.row === row && b.col === col);
       
       if (selectedColorId === null) {
-        // Remove bead
         if (existingIndex >= 0) {
           const newBeads = [...prev];
           newBeads.splice(existingIndex, 1);
@@ -105,10 +87,9 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
         return prev;
       }
       
-      // Add or update bead
       if (existingIndex >= 0) {
         if (prev[existingIndex].colorId === selectedColorId) {
-          return prev; // No change
+          return prev;
         }
         const newBeads = [...prev];
         newBeads[existingIndex] = { ...newBeads[existingIndex], colorId: selectedColorId };
@@ -160,7 +141,6 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
 
   const handleClose = useCallback(() => {
     if (hasChanges) {
-      // Could add confirmation dialog here
       onSave(beads);
     }
     onOpenChange(false);
@@ -181,15 +161,6 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
               )}
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setForceCompact(!forceCompact)}
-                title={forceCompact ? 'Vis fuld værktøjslinje' : 'Minimer værktøjslinje'}
-                className="h-9 w-9"
-              >
-                {forceCompact ? <PanelLeft className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
-              </Button>
               <Button 
                 variant="outline"
                 onClick={handleClose} 
@@ -210,8 +181,8 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
           </DialogTitle>
         </DialogHeader>
 
-        <div className={`flex ${isCompact ? 'flex-col' : 'flex-row'} gap-4 overflow-hidden`}>
-          {/* Grid area - always first and full size */}
+        <div className="flex flex-row gap-4 overflow-hidden">
+          {/* Grid area */}
           <ScrollArea className="flex-1 max-h-[70vh]">
             <div className="p-2">
               <InteractiveBeadGrid
@@ -227,46 +198,26 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
             </div>
           </ScrollArea>
 
-          {/* Toolbar - adapts to compact mode */}
-          <div className={isCompact ? 'w-full' : 'w-64 flex-shrink-0'}>
-            {isCompact ? (
-              <EditorToolbar
-                compact
-                colors={colors}
-                selectedColorId={selectedColorId}
-                onColorSelect={setSelectedColorId}
-                isPipetteActive={isPipetteActive}
-                onPipetteToggle={() => setIsPipetteActive(!isPipetteActive)}
-                isDrawMode={isDrawMode}
-                onDrawModeToggle={setIsDrawMode}
-                replaceFromColorId={replaceFromColorId}
-                replaceToColorId={replaceToColorId}
-                onReplaceFromChange={setReplaceFromColorId}
-                onReplaceToChange={setReplaceToColorId}
-                onReplaceOnPlate={handleReplaceOnPlate}
-                onReplaceGlobal={handleReplaceGlobal}
-                onClearPlate={handleClearPlate}
-              />
-            ) : (
-              <ScrollArea className="max-h-[70vh]">
-                <EditorToolbar
-                  colors={colors}
-                  selectedColorId={selectedColorId}
-                  onColorSelect={setSelectedColorId}
-                  isPipetteActive={isPipetteActive}
-                  onPipetteToggle={() => setIsPipetteActive(!isPipetteActive)}
-                  isDrawMode={isDrawMode}
-                  onDrawModeToggle={setIsDrawMode}
-                  replaceFromColorId={replaceFromColorId}
-                  replaceToColorId={replaceToColorId}
-                  onReplaceFromChange={setReplaceFromColorId}
-                  onReplaceToChange={setReplaceToColorId}
-                  onReplaceOnPlate={handleReplaceOnPlate}
-                  onReplaceGlobal={handleReplaceGlobal}
-                  onClearPlate={handleClearPlate}
-                />
-              </ScrollArea>
-            )}
+          {/* Compact toolbar - right side, vertical strip */}
+          <div className="flex-shrink-0">
+            <EditorToolbar
+              compact
+              vertical
+              colors={colors}
+              selectedColorId={selectedColorId}
+              onColorSelect={setSelectedColorId}
+              isPipetteActive={isPipetteActive}
+              onPipetteToggle={() => setIsPipetteActive(!isPipetteActive)}
+              isDrawMode={isDrawMode}
+              onDrawModeToggle={setIsDrawMode}
+              replaceFromColorId={replaceFromColorId}
+              replaceToColorId={replaceToColorId}
+              onReplaceFromChange={setReplaceFromColorId}
+              onReplaceToChange={setReplaceToColorId}
+              onReplaceOnPlate={handleReplaceOnPlate}
+              onReplaceGlobal={handleReplaceGlobal}
+              onClearPlate={handleClearPlate}
+            />
           </div>
         </div>
 

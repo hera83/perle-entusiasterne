@@ -175,7 +175,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
             <TooltipContent>Fasthold farve (tegn ved at trække)</TooltipContent>
           </Tooltip>
 
-          <Separator orientation="vertical" className="h-8" />
+          <Separator orientation={vertical ? "horizontal" : "vertical"} className={vertical ? "w-full" : "h-8"} />
 
           {/* Replace Color Popover */}
           <Popover>

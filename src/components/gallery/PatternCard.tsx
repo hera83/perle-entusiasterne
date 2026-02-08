@@ -329,7 +329,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
               </div>
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <User className="h-3.5 w-3.5 flex-shrink-0" />
-                <span className="truncate">{pattern.creator_name || 'Ukendt'}</span>
+                <span className="truncate">{pattern.creator_name?.split(' ')[0] || 'Ukendt'}</span>
               </div>
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <Grid3X3 className="h-3.5 w-3.5 flex-shrink-0" />

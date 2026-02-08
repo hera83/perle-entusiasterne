@@ -93,27 +93,29 @@ export const Workshop: React.FC = () => {
             </CardContent>
           </Card>
 
-          {/* Farve-administration */}
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-            <CardHeader>
-              <Palette className="h-12 w-12 text-primary mb-2" />
-              <CardTitle>Farve-administration</CardTitle>
-              <CardDescription>
-                Administrer dine perlefarver. Tilføj nye farver, 
-                rediger eksisterende eller deaktiver farver.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button 
-                className="w-full" 
-                variant="outline"
-                onClick={() => setColorDialogOpen(true)}
-              >
-                <Palette className="h-4 w-4 mr-2" />
-                Åben farver
-              </Button>
-            </CardContent>
-          </Card>
+          {/* Farve-administration - kun for administratorer */}
+          {isAdmin && (
+            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+              <CardHeader>
+                <Palette className="h-12 w-12 text-primary mb-2" />
+                <CardTitle>Farve-administration</CardTitle>
+                <CardDescription>
+                  Administrer dine perlefarver. Tilføj nye farver, 
+                  rediger eksisterende eller deaktiver farver.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button 
+                  className="w-full" 
+                  variant="outline"
+                  onClick={() => setColorDialogOpen(true)}
+                >
+                  <Palette className="h-4 w-4 mr-2" />
+                  Åben farver
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Info section */}
