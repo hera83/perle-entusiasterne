@@ -46,7 +46,7 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-sm font-medium text-muted-foreground mr-1">Kategori:</span>
+      
       <Button
         size="sm"
         variant={selectedCategory === null ? 'default' : 'outline'}
