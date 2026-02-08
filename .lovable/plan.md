@@ -1,79 +1,53 @@
 
-# Fix: Delingslink fungerer ikke
 
-## Problem
+# Download PDF på SharedPattern-siden
 
-`handleShareLink` i PatternCard.tsx genererer en share_token og prøver at UPDATE bead_patterns, men:
+## Udfordring
 
-1. Supabase `.update()` returnerer ikke en fejl når RLS blokerer opdateringen - den returnerer bare 0 berørte rækker
-2. Koden tjekker kun `if (error)` som aldrig er sat, og tror derfor opdateringen lykkedes
-3. Brugere kan ikke UPDATE andres offentlige opskrifter (RLS: `auth.uid() = user_id`)
-4. URL kopieres med et token der aldrig blev gemt i databasen
+Den eksisterende `generatePatternPdf` funktion henter plader og farver direkte fra databasen via Supabase-klienten. På SharedPattern-siden er brugeren typisk IKKE logget ind, så RLS vil blokere disse queries. Men al data er allerede hentet via edge function og ligger i komponentens state.
 
-## Løsning
+## Loesning
 
-Flytte token-generering til en edge function der bruger service role (ligesom `get-shared-pattern` allerede gør for læsning). Dette sikrer:
-- Token genereres altid korrekt, uanset RLS
-- Verificering at tokenet faktisk blev gemt
-- Både ejere og ikke-ejere kan generere delingslinks
+Udvid `generatePatternPdf.ts` med en ny eksporteret funktion `generatePatternPdfFromData` der accepterer allerede-hentet data (pattern, plates, colors) i stedet for at hente det selv. SharedPattern-siden kalder denne funktion med det data den allerede har.
 
-### Ændringer
+## AEndringer
 
-**1. Ny edge function: `generate-share-token`**
+### 1. Ny funktion i `src/lib/generatePatternPdf.ts`
 
-Fil: `supabase/functions/generate-share-token/index.ts`
-
-- Modtager `pattern_id` i request body
-- Bruger service role til at tjekke om opskriften allerede har et `share_token`
-- Hvis ja: returnerer det eksisterende token
-- Hvis nej: genererer et nyt UUID, opdaterer rækken, verificerer at det blev gemt, og returnerer det
-- Kræver ikke login (public patterns kan deles af alle)
+Tilfoej en ny eksporteret funktion i bunden af filen:
 
 ```text
-POST /generate-share-token
-Body: { "pattern_id": "uuid" }
-Response: { "share_token": "uuid" }
+export async function generatePatternPdfFromData(
+  pattern: PatternData,
+  plates: PlateData[],
+  colorList: ColorInfo[]
+): Promise<void>
 ```
 
-**2. Opdater PatternCard.tsx**
+Denne funktion:
+- Springer Supabase-queries over (data er allerede givet)
+- Bygger `colors` Map fra `colorList` arrayet
+- Kalder de samme `drawOverviewPage`, `drawBeadCountPage` og `drawPlatePage` funktioner
+- Logger IKKE download til `pdf_downloads` (brugeren er muligvis anonym)
+- Viser samme loading/success toasts
 
-Fil: `src/components/gallery/PatternCard.tsx`
+### 2. Tilfoej knap i `src/pages/SharedPattern.tsx`
 
-Ændr `handleShareLink` funktionen til at kalde den nye edge function i stedet for at lave inline Supabase-queries:
+Tilfoej en "Download PDF" knap i sidebar-sektionen (under Pladeinfo-boksen):
 
 ```text
-// I stedet for direkte SELECT + UPDATE via Supabase client:
-const response = await fetch(
-  `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-share-token`,
-  {
-    method: 'POST',
-    headers: {
-      'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ pattern_id: pattern.id }),
-  }
-);
-const { share_token } = await response.json();
-const url = `${window.location.origin}/opskrift/${share_token}`;
+<Button onClick={handleDownloadPdf} className="w-full gap-2">
+  <Download className="h-4 w-4" />
+  Download PDF
+</Button>
 ```
 
-Fjern `as any` casts og direkte Supabase-kald fra funktionen.
+`handleDownloadPdf` funktionen mapper det eksisterende `data` objekt til de forventede typer og kalder `generatePatternPdfFromData`.
 
-**3. Registrer edge function i config**
+## Filer der aendres
 
-Fil: `supabase/config.toml`
-
-Tilfoej:
-```text
-[functions.generate-share-token]
-verify_jwt = false
-```
-
-### Oversigt
-
-| Fil | Ændring |
+| Fil | AEndring |
 |-----|---------|
-| `supabase/functions/generate-share-token/index.ts` | NY - Genererer/henter share token via service role |
-| `src/components/gallery/PatternCard.tsx` | Brug edge function i stedet for direkte UPDATE |
-| `supabase/config.toml` | Registrer ny edge function |
+| `src/lib/generatePatternPdf.ts` | Tilfoej `generatePatternPdfFromData` eksport + eksporter `PatternData`, `PlateData`, `ColorInfo` typer |
+| `src/pages/SharedPattern.tsx` | Tilfoej Download PDF knap + import af ny funktion |
+
