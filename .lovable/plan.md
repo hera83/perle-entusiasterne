@@ -1,57 +1,46 @@
 
-# Fix: Token-refresh storm foraarsager logout
+
+# Fix: Genindfoer kontrolleret token-refresh (stop stormen)
 
 ## Problemet
 
-Loggen viser en **massiv storm af token-refresh requests** -- over 30 refresh-kald inden for 2-3 sekunder, som til sidst rammer en 429 rate limit. Dette sker fordi der koerer **to konkurrerende refresh-mekanismer** samtidigt:
+Netvaerksloggen viser tydeligt at **token-refresh stormen fortsaetter**. Inden for 2 sekunder sendes 5 refresh-requests, hvor den sidste rammer en 429 rate limit. Herefter er sessionen ugyldig og brugeren ser ud til at vaere logget ud.
 
-1. **Supabase's indbyggede auto-refresh** -- konfigureret med `autoRefreshToken: true` i `client.ts` (auto-genereret fil, kan IKKE aendres)
-2. **En custom `scheduleRefresh`** i AuthContext -- et setTimeout-baseret system der ogsaa kalder `refreshSession()`
-
-Derudover proever `supabase-auth-config.ts` at disable den indbyggede refresh via `(supabase.auth as any).autoRefreshToken = false`, men dette er en skroebelig race condition der ikke altid virker.
-
-### Hvad der sker naar du bruger appen:
+Aarsagen er at `client.ts` (auto-genereret, kan ikke aendres) har `autoRefreshToken: true`, som foraarsager at Supabase's interne refresh-mekanisme kaeder refresh-kald:
 
 ```text
-Login med password
-  -> Supabase's built-in refresh starter automatisk
-  -> Custom scheduleRefresh starter OGSaa
-  -> Begge kalder refreshSession() samtidigt
-  -> Hvert kald revokerer det forrige token
-  -> Dette trigger TOKEN_REFRESHED events
-  -> Som kalder scheduleRefresh IGEN
-  -> Kaskade af refresh-requests
-  -> 429 rate limit ramt
-  -> Token bliver ugyldigt
-  -> Naeste handling (aaben opskrift/rediger) fejler
-  -> Brugeren ser ud til at vaere logget ud
+Token expires snart
+  -> Built-in auto-refresh kalder refresh
+  -> TOKEN_REFRESHED event -> ny session med nyt refresh_token
+  -> Built-in auto-refresh ser nyt token, scheduler nyt refresh
+  -> Multiple interne timers kaskaderer
+  -> 4-5 refresh-kald paa under 2 sekunder
+  -> 429 rate limit
+  -> Session ugyldig
+  -> Brugeren er "logget ud"
 ```
+
+Den loesning der **virkede** for administrator-delen (disable built-in refresh + kontrolleret timer) blev ved en fejl fjernet i det forrige fix.
 
 ## Loesningen
 
-Fjern den custom refresh-mekanisme og lad Supabase's indbyggede auto-refresh haandtere det alene. Da `client.ts` allerede har `autoRefreshToken: true`, er der INGEN grund til at have et ekstra refresh-system.
+Genindfoer den kontrollerede refresh-strategi fra administrator-loesningen, men nu paa en maade der virker for ALLE brugere:
 
-### AEndring 1: Fjern `supabase-auth-config.ts`
+### 1. Stop Supabase's built-in auto-refresh (AuthContext.tsx)
 
-Slet filen helt. Den proever at disable noget der ikke kan disables (fordi `client.ts` er auto-genereret med `autoRefreshToken: true`).
+Kald `supabase.auth.stopAutoRefresh()` som det allerfoerste i `initializeAuth`. Dette er den **officielle API** til at deaktivere den indbyggede refresh-mekanisme (i stedet for den gamle hacky property-override).
 
-### AEndring 2: Forenkl AuthContext
+### 2. Kontrolleret manuel refresh-timer
 
-Fjern:
-- `scheduleRefresh` funktionen og `refreshTimerRef`
-- Import af `cleanupAutoRefresh`
-- `cleanupAutoRefresh()` kaldet i `initializeAuth`
-- Alle `scheduleRefresh()` kald
+Genindfoer en `scheduleRefresh`-funktion der:
+- Beregner hvornaar token udloeber (fra session.expires_at)
+- Saetter **et enkelt** setTimeout til at refreshe 60 sekunder foer udloeb
+- Bruger en `refreshTimerRef` til at forhindre dobbelte timers
+- Ved hvert TOKEN_REFRESHED event: opdaterer session-ref og re-scheduler timeren
 
-Behold:
-- `TOKEN_REFRESHED` handler: opdaterer kun `sessionRef` (ingen reschedule)
-- `SIGNED_OUT` handler: forbliver ignoreret (beskytter mod uoensket logout)
-- `SIGNED_IN` handler: opdaterer user state (ingen scheduleRefresh)
-- Al oevrig logik (checkAdminRole, signIn, signOut, verifySession)
+### 3. Beskyttelse mod samtidige refreshes
 
-### Resultat
-
-Kun EN refresh-mekanisme (Supabase's indbyggede), ingen konflikter, ingen token-storm, ingen 429 errors.
+Tilfoej en `isRefreshingRef` (boolean ref) der sikrer at kun EN refresh koerer ad gangen. Hvis en refresh allerede er i gang, ignoreres nye forsog.
 
 ---
 
@@ -59,5 +48,133 @@ Kun EN refresh-mekanisme (Supabase's indbyggede), ingen konflikter, ingen token-
 
 | Fil | AEndring |
 |-----|---------|
-| `src/lib/supabase-auth-config.ts` | Slettes helt |
-| `src/contexts/AuthContext.tsx` | Fjern custom refresh, forenkl auth state management |
+| `src/contexts/AuthContext.tsx` | Stop built-in auto-refresh, tilfoej kontrolleret timer |
+
+---
+
+## Tekniske detaljer
+
+### AuthContext.tsx - Nye refs og funktioner
+
+```text
+const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+const isRefreshingRef = useRef(false);
+
+const scheduleRefresh = useCallback((session: Session) => {
+  // Ryd eksisterende timer
+  if (refreshTimerRef.current) {
+    clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = null;
+  }
+
+  if (!session.expires_at) return;
+
+  const expiresAt = session.expires_at * 1000; // sekunder -> ms
+  const now = Date.now();
+  const refreshIn = expiresAt - now - 60_000; // 60 sek foer udloeb
+
+  if (refreshIn <= 0) {
+    // Allerede udloebet eller taet paa - refresh med det samme
+    performRefresh();
+    return;
+  }
+
+  refreshTimerRef.current = setTimeout(() => {
+    performRefresh();
+  }, refreshIn);
+}, []);
+
+const performRefresh = async () => {
+  if (isRefreshingRef.current) return; // Forhindre dobbelt refresh
+  isRefreshingRef.current = true;
+
+  try {
+    const { data, error } = await supabase.auth.refreshSession();
+    if (error) {
+      console.error('Session refresh failed:', error.message);
+    }
+    // TOKEN_REFRESHED event haandterer resten
+  } catch (err) {
+    console.error('Error refreshing session:', err);
+  } finally {
+    isRefreshingRef.current = false;
+  }
+};
+```
+
+### AuthContext.tsx - Opdateret initializeAuth
+
+```text
+const initializeAuth = async () => {
+  try {
+    // STOP Supabase's built-in auto-refresh foerst
+    supabase.auth.stopAutoRefresh();
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!isMounted) return;
+
+    sessionRef.current = session ?? null;
+    setUser(session?.user ?? null);
+    currentUserIdRef.current = session?.user?.id ?? null;
+
+    if (session?.user) {
+      wasLoggedInRef.current = true;
+      scheduleRefresh(session);
+      const adminResult = await checkAdminRole(session.user.id);
+      if (isMounted) setIsAdmin(adminResult);
+    }
+  } catch (err) {
+    console.error('Error initializing auth:', err);
+  } finally {
+    if (isMounted) setLoading(false);
+  }
+};
+```
+
+### AuthContext.tsx - Opdateret onAuthStateChange
+
+```text
+if (event === 'TOKEN_REFRESHED') {
+  if (session) {
+    sessionRef.current = session;
+    scheduleRefresh(session); // Re-schedule naeste refresh
+  }
+  return;
+}
+
+if (event === 'SIGNED_IN' && session?.user) {
+  wasLoggedInRef.current = true;
+  if (currentUserIdRef.current !== session.user.id) {
+    currentUserIdRef.current = session.user.id;
+    sessionRef.current = session;
+    setUser(session.user);
+    scheduleRefresh(session);
+    checkAdminRole(session.user.id).then(result => {
+      if (isMounted) setIsAdmin(result);
+    });
+  } else {
+    sessionRef.current = session;
+    scheduleRefresh(session);
+  }
+}
+```
+
+### AuthContext.tsx - Cleanup
+
+```text
+return () => {
+  isMounted = false;
+  subscription.unsubscribe();
+  if (refreshTimerRef.current) {
+    clearTimeout(refreshTimerRef.current);
+  }
+};
+```
+
+### Hvorfor dette virker
+
+1. `stopAutoRefresh()` er Supabase's officielle API - den stopper den indbyggede timer paalideligt
+2. Vores egen timer koerer KUN en gang per session-fornyelse (ingen kaskade)
+3. `isRefreshingRef` sikrer at kun et refresh-kald koerer ad gangen
+4. Denne strategi er den SAMME der virkede for administrator-delen, nu anvendt globalt
+
