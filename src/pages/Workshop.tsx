@@ -50,7 +50,7 @@ export const Workshop: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className={`grid gap-6 ${isAdmin ? 'md:grid-cols-2 lg:grid-cols-3' : 'md:grid-cols-2'}`}>
           {/* Import billede */}
           <Card className="hover:shadow-lg transition-shadow cursor-pointer">
             <CardHeader>
