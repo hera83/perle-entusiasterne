@@ -235,6 +235,11 @@ const SharedPattern: React.FC = () => {
                   <p>Pladestørrelse: {pattern.plate_dimension}x{pattern.plate_dimension}</p>
                 </div>
               </div>
+
+              <Button onClick={handleDownloadPdf} className="w-full gap-2">
+                <Download className="h-4 w-4" />
+                Download PDF
+              </Button>
             </div>
 
             {/* Bead plate view */}
