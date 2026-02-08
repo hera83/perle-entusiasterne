@@ -4,8 +4,10 @@ import { BeadPlateView } from '@/components/gallery/BeadPlateView';
 import { PatternPreview } from '@/components/gallery/PatternPreview';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ChevronLeft, ChevronRight, ArrowLeft, Grid3X3, Hash, User, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ArrowLeft, Grid3X3, Hash, User, Loader2, Download } from 'lucide-react';
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
+import { generatePatternPdfFromData } from '@/lib/generatePatternPdf';
+import type { PatternData, PlateData, ColorInfo } from '@/lib/generatePatternPdf';
 
 interface SharedPatternData {
   pattern: {
@@ -144,6 +146,31 @@ const SharedPattern: React.FC = () => {
 
   const totalPlates = data ? data.pattern.plate_width * data.pattern.plate_height : 0;
 
+  const handleDownloadPdf = async () => {
+    if (!data) return;
+
+    const pdfPattern: PatternData = {
+      id: data.pattern.id,
+      title: data.pattern.title,
+      category_name: data.pattern.category_name,
+      creator_name: data.pattern.creator_name,
+      plate_width: data.pattern.plate_width,
+      plate_height: data.pattern.plate_height,
+      plate_dimension: data.pattern.plate_dimension,
+      total_beads: data.pattern.total_beads,
+    };
+
+    const pdfPlates: PlateData[] = data.plates.map(p => ({
+      beads: (p.beads as any[]) || [],
+      row_index: p.row_index,
+      column_index: p.column_index,
+    }));
+
+    const pdfColors: ColorInfo[] = data.colors;
+
+    await generatePatternPdfFromData(pdfPattern, pdfPlates, pdfColors);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -233,6 +260,11 @@ const SharedPattern: React.FC = () => {
                   <p>Pladestørrelse: {pattern.plate_dimension}x{pattern.plate_dimension}</p>
                 </div>
               </div>
+
+              <Button onClick={handleDownloadPdf} className="w-full gap-2">
+                <Download className="h-4 w-4" />
+                Download PDF
+              </Button>
             </div>
 
             {/* Bead plate view */}

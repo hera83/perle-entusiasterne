@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
-interface PatternData {
+export interface PatternData {
   id: string;
   title: string;
   category_name: string | null;
@@ -13,14 +13,14 @@ interface PatternData {
   total_beads: number;
 }
 
-interface ColorInfo {
+export interface ColorInfo {
   id: string;
   hex_color: string;
   name: string;
   code: string;
 }
 
-interface PlateData {
+export interface PlateData {
   beads: { row: number; col: number; colorId: string | null }[];
   row_index: number;
   column_index: number;
@@ -432,6 +432,42 @@ export async function generatePatternPdf(pattern: PatternData): Promise<void> {
       pattern_id: pattern.id,
       user_id: userData?.user?.id || null,
     }).then(() => {});
+
+    toast.dismiss(loadingToast);
+    toast.success('PDF downloadet!');
+  } catch (error) {
+    console.error('PDF generation error:', error);
+    toast.dismiss(loadingToast);
+    toast.error('Kunne ikke generere PDF');
+  }
+}
+
+// --- Export for SharedPattern (uses pre-fetched data, no Supabase queries) ---
+export async function generatePatternPdfFromData(
+  pattern: PatternData,
+  plates: PlateData[],
+  colorList: ColorInfo[]
+): Promise<void> {
+  const loadingToast = toast.loading('Genererer PDF...');
+
+  try {
+    const colors = new Map<string, ColorInfo>(
+      colorList.map(c => [c.id, c])
+    );
+
+    const doc = new jsPDF('portrait', 'mm', 'a4');
+
+    drawOverviewPage(doc, pattern, plates, colors);
+
+    doc.addPage();
+    drawBeadCountPage(doc, plates, colors, pattern.total_beads);
+
+    for (const plate of plates) {
+      doc.addPage();
+      drawPlatePage(doc, plate, colors, pattern.plate_dimension);
+    }
+
+    doc.save(`${pattern.title}.pdf`);
 
     toast.dismiss(loadingToast);
     toast.success('PDF downloadet!');
