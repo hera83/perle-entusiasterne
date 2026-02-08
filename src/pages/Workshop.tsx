@@ -12,7 +12,7 @@ import { ImportImageDialog } from '@/components/workshop/ImportImageDialog';
 import { PatternEditor } from '@/components/workshop/PatternEditor';
 
 export const Workshop: React.FC = () => {
-  const { user, loading } = useAuth();
+  const { user, isAdmin, loading } = useAuth();
   const { patternId } = useParams<{ patternId: string }>();
   const [colorDialogOpen, setColorDialogOpen] = useState(false);
   const [createPatternDialogOpen, setCreatePatternDialogOpen] = useState(false);
