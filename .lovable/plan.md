@@ -1,139 +1,74 @@
 
 
-# Galleri-forbedringer: Layout, paginering, kategorifilter og auto-oprydning
+# Galleri-kort: Ikon-knapper, metadata-redigering og adgangsstyring
 
 ## Oversigt
 
-Fem aendringer til galleriet:
+Fire aendringer til PatternCard og CategoryFilter:
 
-1. Soegefelt flyttes op (mindre whitespace)
-2. Opskriftkort goeres mindre - 4 per raekke
-3. Sidebaseret visning med 10 opskrifter per side + "Ny"-markering
-4. Kategorifiltrering goeres mere synlig og altid tilgaengelig
-5. Automatisk sletning af tomme kategorier naar admin sletter en opskrift
-
----
-
-## 1. Soegefelt flyttes op
-
-I dag har soegefeltet et `min-h-[50vh]` center-layout foer foerste soegning, og `mb-8` efter. Det fylder unodvendigt plads.
-
-### AEndring
-
-- Fjern `min-h-[50vh]` layoutet helt. Soegefelt og titel vises altid kompakt i toppen med `py-4` i stedet for `py-8`
-- Behold titel, undertekst og soegefelt - bare med mindre spacing
-- "hasSearched"-logikken forenkles: kategorifilter og opskrifter vises altid (ikke kun efter soegning)
+1. Alle knapper i footer goeres til rene ikon-knapper (ingen tekst)
+2. Ny "Ret metadata"-knap med dialog til at aendre titel og kategori
+3. Adgangsstyring: Admin ser alle 3 knapper, ejer ser meta+rediger, ikke-logget-ind ser ingen
+4. Fjern "Kategori:"-teksten fra CategoryFilter
 
 ---
 
-## 2. Opskriftkort goeres mindre - 4 per raekke
+## 1. Alle footer-knapper som rene ikon-knapper
 
-### AEndring i Gallery.tsx
+I dag har knapperne tekst som "Aaben", "Nulstil", "PDF". Disse erstattes med rene ikon-knapper med tooltips saa brugeren stadig kan se hvad de goer ved hover.
 
-Grid-klassen aendres fra:
-```text
-grid gap-6 sm:grid-cols-2 lg:grid-cols-3
-```
-til:
-```text
-grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4
-```
-
-### AEndring i PatternCard.tsx
-
-- `CardTitle` reduceres fra `text-lg` til `text-base`
-- Metadata-tekst reduceres fra `text-sm` til `text-xs`
-- Ikoner reduceres fra `h-4 w-4` til `h-3.5 w-3.5`
-- `CardHeader` og `CardContent` padding reduceres
-- Preview-billedet bibeholdes som `aspect-square`
+Knapperne faar alle `h-7 w-7 p-0` styling (som rediger/slet allerede har) og et `title`-attribut for tilgaengelighed.
 
 ---
 
-## 3. Sidebaseret visning med 10 opskrifter per side
+## 2. Ny "Ret metadata"-dialog
 
-### Ny logik i Gallery.tsx
+En ny knap med et `Settings`/`FileEdit`-ikon placeres til venstre for rediger-knappen. Ved klik aabnes en dialog hvor brugeren kan:
 
-I stedet for at hente alle opskrifter paa een gang, indfores:
-- `currentPage` state (starter paa 1)
-- `totalCount` state (total antal opskrifter der matcher filtrene)
-- `ITEMS_PER_PAGE = 10` (konstant, 2-3 raekker med 4 kort)
+- AEndre **titel** (input-felt)
+- AEndre **kategori** (dropdown med eksisterende kategorier + mulighed for at oprette ny)
 
-Supabase-queryen udvides med `.range()` for server-side paginering:
-```text
-const from = (currentPage - 1) * ITEMS_PER_PAGE;
-const to = from + ITEMS_PER_PAGE - 1;
-request = request.range(from, to);
-```
+Naar metadata gemmes:
+- Opdater `bead_patterns` med ny titel og category_id
+- Hvis kategorien aendres, skal den gamle kategori slettes hvis den bliver tom
 
-For at faa totalt antal bruges Supabase's `{ count: 'exact', head: false }` option paa select-kaldet.
+### Automatisk oprydning ved kategori-aendring
 
-### "Ny"-markering
+Den eksisterende `cleanup_empty_categories`-trigger koerer kun ved DELETE. Vi tilfojer en tilsvarende trigger paa UPDATE, saa hvis en opskrift flyttes til en anden kategori, ryddes den gamle kategori op hvis den er tom.
 
-Opskrifter der er under 7 dage gamle faar en "Ny" badge i PatternCard:
-```text
-const isNew = (Date.now() - new Date(pattern.created_at).getTime()) < 7 * 24 * 60 * 60 * 1000;
-```
-Badgen vises som en lille groent maerkat i oevre hoejre hjoerne af kortet.
-
-### Pagineringskomponent
-
-Brug den eksisterende `pagination.tsx` UI-komponent. Teksten aendres til dansk ("Forrige"/"Naeste"). Under kortene vises:
-- "Forrige" og "Naeste" knapper
-- Sidenumre med ellipsis for store antal
-- Tekst: "Side X af Y"
-
-Naar man skifter side, scrolles til toppen af opskriftlisten.
-
----
-
-## 4. Kategorifiltrering goeres mere synlig
-
-I dag er kategorifiltrering gemt bag soegning (vises kun efter `hasSearched = true`) og vist som smaa badges.
-
-### AEndring
-
-- Kategorifilter vises **altid** under soegefeltet - ikke kun efter soegning
-- Redesign som en raekke af tydelige filterknapper med storre tekst
-- Den valgte kategori faar en solid baggrund (primary), de andre faar outline
-- Tilfoej et antal (pattern count) efter hver kategoris navn saa brugeren kan se hvor mange opskrifter der er i hver kategori
-- Hent kategori-count fra databasen
-
----
-
-## 5. Automatisk sletning af tomme kategorier
-
-### Loesning: Database-trigger
-
-Naar en opskrift slettes, skal databasen automatisk tjekke om kategorien nu er tom og i saa fald slette den. Dette goeres med en PostgreSQL trigger-funktion paa `bead_patterns`:
+**Ny database-migrering:**
 
 ```text
-CREATE OR REPLACE FUNCTION public.cleanup_empty_categories()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-BEGIN
-  -- Hvis den slettede opskrift havde en kategori
-  IF OLD.category_id IS NOT NULL THEN
-    -- Tjek om der stadig er opskrifter med denne kategori
-    IF NOT EXISTS (
-      SELECT 1 FROM bead_patterns WHERE category_id = OLD.category_id
-    ) THEN
-      DELETE FROM categories WHERE id = OLD.category_id;
-    END IF;
-  END IF;
-  RETURN OLD;
-END;
-$$;
-
-CREATE TRIGGER trigger_cleanup_empty_categories
-  AFTER DELETE ON public.bead_patterns
+CREATE TRIGGER trigger_cleanup_empty_categories_on_update
+  AFTER UPDATE OF category_id ON public.bead_patterns
   FOR EACH ROW
+  WHEN (OLD.category_id IS DISTINCT FROM NEW.category_id)
   EXECUTE FUNCTION public.cleanup_empty_categories();
 ```
 
-Dette koerer automatisk ved enhver sletning - baade fra admin-galleriet og alle andre steder. Funktionen er `SECURITY DEFINER` saa den har rettighederne til at slette kategorier uanset hvem der udforer sletningen.
+Funktionen `cleanup_empty_categories()` eksisterer allerede og tjekker `OLD.category_id` - den virker ogsaa for UPDATE.
+
+---
+
+## 3. Adgangsstyring for knapperne
+
+Nuvaerende logik:
+- `canEdit = isAdmin || (user && user.id === pattern.user_id)` - viser rediger-knap
+- `canDelete = isAdmin` - vises kun for admin
+
+Ny logik:
+- `canManage = isAdmin || (user && user.id === pattern.user_id)` - viser baade "Ret meta" og "Rediger opskrift"
+- `canDelete = isAdmin` - forbliver kun for admin
+- Ikke-logget-ind: ingen af de tre knapper vises
+
+---
+
+## 4. Fjern "Kategori:" teksten
+
+I `CategoryFilter.tsx` fjernes linjen:
+```text
+<span className="text-sm font-medium text-muted-foreground mr-1">Kategori:</span>
+```
 
 ---
 
@@ -141,112 +76,182 @@ Dette koerer automatisk ved enhver sletning - baade fra admin-galleriet og alle 
 
 | Fil | AEndring |
 |-----|---------|
-| `src/pages/Gallery.tsx` | Kompakt layout, paginering, altid-synlig kategorifilter, totalCount |
-| `src/components/gallery/PatternCard.tsx` | Mindre kort, "Ny"-badge |
-| `src/components/gallery/CategoryFilter.tsx` | Storre/tydeligere knapper, pattern count per kategori |
-| `src/components/gallery/SearchBar.tsx` | Fjern "Tip" tekst for at spare plads |
-
-### Database-migrering
-
-En ny migrering med trigger-funktionen `cleanup_empty_categories` og triggeren paa `bead_patterns`.
+| `src/components/gallery/PatternCard.tsx` | Ikon-knapper, ny metadata-dialog, adgangsstyring |
+| `src/components/gallery/CategoryFilter.tsx` | Fjern "Kategori:" tekst |
+| Database-migrering | Ny trigger paa UPDATE for kategori-oprydning |
 
 ---
 
 ## Tekniske detaljer
 
-### Gallery.tsx - Paginering
+### PatternCard.tsx - Ny metadata-dialog
+
+Ny state og imports:
 
 ```text
-const ITEMS_PER_PAGE = 10;
+import { Settings2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // Ny state
-const [currentPage, setCurrentPage] = useState(1);
-const [totalCount, setTotalCount] = useState(0);
-
-// I fetchPatterns:
-let request = supabase
-  .from('bead_patterns')
-  .select('...', { count: 'exact' })
-  ...
-
-const from = (currentPage - 1) * ITEMS_PER_PAGE;
-const to = from + ITEMS_PER_PAGE - 1;
-
-const { data, error, count } = await request.range(from, to);
-setTotalCount(count || 0);
-
-const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
+const [metaDialogOpen, setMetaDialogOpen] = useState(false);
+const [editTitle, setEditTitle] = useState(pattern.title);
+const [editCategoryId, setEditCategoryId] = useState(pattern.category_id);
+const [categories, setCategories] = useState([]);
+const [newCategoryName, setNewCategoryName] = useState('');
+const [isSavingMeta, setIsSavingMeta] = useState(false);
 ```
 
-Naar soegning eller kategori aendres, nulstilles `currentPage` til 1.
-
-### Gallery.tsx - Forenklet layout
+Funktioner:
 
 ```text
-<div className="container px-4 py-4">
-  {/* Header med titel */}
-  <div className="text-center mb-4">
-    <h1 className="text-3xl font-bold mb-1">Perle Entusiasterne</h1>
-    <p className="text-muted-foreground">
-      Sog i vores samling af perleplade-opskrifter
-    </p>
-  </div>
+const fetchCategories = async () => {
+  const { data } = await supabase.from('categories').select('id, name').order('name');
+  setCategories(data || []);
+};
 
-  {/* Soegefelt */}
-  <div className="max-w-2xl mx-auto mb-4">
-    <SearchBar ... />
-  </div>
+const handleOpenMetaDialog = () => {
+  setEditTitle(pattern.title);
+  setEditCategoryId(pattern.category_id);
+  setNewCategoryName('');
+  fetchCategories();
+  setMetaDialogOpen(true);
+};
 
-  {/* Kategorifilter - ALTID synlig */}
-  <div className="mb-6">
-    <CategoryFilter ... />
-  </div>
+const handleSaveMeta = async () => {
+  setIsSavingMeta(true);
+  let categoryId = editCategoryId;
 
-  {/* Opskriftkort i 4-kolonne grid */}
-  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-    ...
-  </div>
+  // Opret ny kategori hvis valgt
+  if (newCategoryName.trim()) {
+    const { data } = await supabase
+      .from('categories')
+      .insert({ name: newCategoryName.trim() })
+      .select('id')
+      .single();
+    if (data) categoryId = data.id;
+  }
 
-  {/* Paginering */}
-  <div className="mt-8">
-    <Pagination>...</Pagination>
-    <p className="text-center text-sm text-muted-foreground mt-2">
-      Side {currentPage} af {totalPages}
-    </p>
-  </div>
-</div>
+  const { error } = await supabase
+    .from('bead_patterns')
+    .update({ title: editTitle, category_id: categoryId })
+    .eq('id', pattern.id);
+
+  if (error) {
+    toast.error('Kunne ikke opdatere opskriften');
+  } else {
+    toast.success('Opskrift opdateret');
+    setMetaDialogOpen(false);
+    onDelete?.(); // Genindlaes listen
+  }
+  setIsSavingMeta(false);
+};
 ```
 
-### PatternCard.tsx - "Ny" badge
+### PatternCard.tsx - Footer layout
 
 ```text
-const isNew = (Date.now() - new Date(pattern.created_at).getTime()) < 7 * 24 * 60 * 60 * 1000;
+<CardFooter className="flex justify-between gap-1 pt-2">
+  {/* Venstre: brugerknapper */}
+  <div className="flex gap-1">
+    <Button size="sm" onClick={onOpen} className="h-7 w-7 p-0" title="Aaben opskrift">
+      <Eye className="h-3.5 w-3.5" />
+    </Button>
+    <AlertDialog>...
+      <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Nulstil progress">
+        <RotateCcw className="h-3.5 w-3.5" />
+      </Button>
+    </AlertDialog>
+    <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Download PDF" ...>
+      <FileDown className="h-3.5 w-3.5" /> eller <Loader2 .../>
+    </Button>
+  </div>
 
-// I CardHeader:
-{isNew && (
-  <Badge className="bg-green-500 text-white text-[10px] px-1.5 py-0">Ny</Badge>
-)}
+  {/* Hoejre: admin/ejer-knapper */}
+  {canManage && (
+    <div className="flex gap-1">
+      <Button size="sm" variant="secondary" onClick={handleOpenMetaDialog} className="h-7 w-7 p-0" title="Ret metadata">
+        <Settings2 className="h-3.5 w-3.5" />
+      </Button>
+      <Button size="sm" variant="secondary" onClick={handleEdit} className="h-7 w-7 p-0" title="Rediger opskrift">
+        <Pencil className="h-3.5 w-3.5" />
+      </Button>
+      {canDelete && (
+        <AlertDialog>...slet...</AlertDialog>
+      )}
+    </div>
+  )}
+</CardFooter>
 ```
 
-### CategoryFilter.tsx - Med antal
+### Metadata dialog UI
 
-Henter antallet af opskrifter per kategori:
 ```text
-// Hent kategorier med count
-const { data } = await supabase
-  .from('categories')
-  .select('id, name, bead_patterns(count)')
-  .order('name');
+<Dialog open={metaDialogOpen} onOpenChange={setMetaDialogOpen}>
+  <DialogContent>
+    <DialogHeader>
+      <DialogTitle>Ret metadata</DialogTitle>
+    </DialogHeader>
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label>Titel</Label>
+        <Input value={editTitle} onChange={e => setEditTitle(e.target.value)} />
+      </div>
+      <div className="space-y-2">
+        <Label>Kategori</Label>
+        <Select value={editCategoryId || ''} onValueChange={v => {
+          setEditCategoryId(v || null);
+          setNewCategoryName('');
+        }}>
+          <SelectTrigger><SelectValue placeholder="Vaelg kategori" /></SelectTrigger>
+          <SelectContent>
+            {categories.map(c => (
+              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label>Eller opret ny kategori</Label>
+        <Input
+          placeholder="Ny kategori..."
+          value={newCategoryName}
+          onChange={e => {
+            setNewCategoryName(e.target.value);
+            if (e.target.value) setEditCategoryId(null);
+          }}
+        />
+      </div>
+    </div>
+    <DialogFooter>
+      <Button variant="outline" onClick={() => setMetaDialogOpen(false)}>Annuller</Button>
+      <Button onClick={handleSaveMeta} disabled={isSavingMeta || !editTitle.trim()}>
+        {isSavingMeta ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Gem'}
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
 ```
 
-Vises som:
+### CategoryFilter.tsx
+
+Fjern linje 49:
 ```text
-<Button variant={selected ? "default" : "outline"}>
-  Disney (3)
-</Button>
+<span className="text-sm font-medium text-muted-foreground mr-1">Kategori:</span>
 ```
 
-### SearchBar.tsx
+### Database-migrering
 
-Fjern "Tip: Soegning starter automatisk..."-teksten for at spare vertikal plads.
+```text
+-- Trigger to cleanup empty categories when pattern category is changed
+CREATE TRIGGER trigger_cleanup_empty_categories_on_update
+  AFTER UPDATE OF category_id ON public.bead_patterns
+  FOR EACH ROW
+  WHEN (OLD.category_id IS DISTINCT FROM NEW.category_id)
+  EXECUTE FUNCTION public.cleanup_empty_categories();
+```
+
+Genbruger den eksisterende `cleanup_empty_categories()`-funktion som allerede refererer til `OLD.category_id`.
 
