@@ -1,217 +1,125 @@
 
-# Fix: Clock-skew-resistent auth med korrekt stopAutoRefresh-timing
 
-## Problemet (rod-aarsag identificeret)
+# Fix: Clock-skew-resistent auth via Storage-wrapper
 
-Tre ting sammenspiller og skaber refresh-stormen:
+## Rod-aarsagen (bekraeftet via kildekode-analyse)
 
-### 1. Klientens ur er 1 time foran serveren
+Problemet er IKKE kun i auto-refresh-timeren. Det sidder MEGET dybere i Supabase-klienten.
 
-Netvaerksloggen viser at browserens tid er 13:39:09Z mens serverens `iat` (issued-at) er 12:39:11 UTC - praecis 1 times forskel. Med Docker-containeren lokalt kan tidsforskellen vaere endnu stoerre.
+### Tre steder tjekker token-udloeb med `Date.now()`
 
-### 2. stopAutoRefresh() kaldes paa det forkerte tidspunkt
+1. **`_recoverAndRefresh()`** (ved initialisering): Tjekker `expires_at * 1000 - Date.now() < 90000`. Med 1-times clock-skew er resultatet altid `< 90000` => refresh.
 
-Nuvaerende kode kalder `stopAutoRefresh()` FOER `getSession()`. Men `getSession()` afventer `_initialize()`, og i `_initialize()`'s finally-blok koerer `_handleVisibilityChange()` som GENSTARTER auto-refresh med en ny visibility-listener og setInterval. Saa vores stop-kald er virkningsloest.
+2. **`_autoRefreshTokenTick()`** (hvert 30. sekund): Tjekker `(expires_at * 1000 - now) / 30000 <= 3`. Med clock-skew er resultatet altid `<= 3` => refresh.
 
-```text
-Nuvaerende raekkefoel:
-  stopAutoRefresh()          -> stopper timer (ok)
-  getSession()               -> afventer _initialize()
-    _initialize() finally:
-      _handleVisibilityChange()
-        _startAutoRefresh()  -> GENSTARTER timer!
-  ... auto-refresh koerer igen
-```
+3. **`__loadSession()`** (paa HVER ENESTE API-foresporgsel): Tjekker `expires_at * 1000 - Date.now() < 90000`. Denne kaldes ved ALLE database-kald, storage-kald og funktionskald, fordi `_getAccessToken()` kalder `getSession()` som kalder `__loadSession()`.
 
-### 3. scheduleRefresh bruger expires_at (absolut tid)
+Det er punkt 3 der er det virkelige problem. `stopAutoRefresh()` stopper kun punkt 2 (baggrunds-timeren). Men HVER gang du laver en database-foresporgsel, kører `__loadSession()` og ser tokenet som udløbet pga. clock-skew. Det trigger endnu en refresh. Hvis flere kald sker samtidigt (f.eks. ved navigation), faar du en kaskade.
 
-Med 1 times clock-skew:
-- Serveren udsteder token med expires_at = serverNow + 3600
-- Klientens Date.now() = serverNow + 3600 (1 time foran)
-- refreshIn = (expires_at * 1000) - Date.now() - 60000 = 0 - 60000 = -60000
-- refreshIn er NEGATIVT = ojeblikkelig refresh
-- Hvert nyt token faar samme beregning = endeloes kaskade
-- Supabase's interne _autoRefreshTokenTick goer det SAMME = dobbelt kaskade
+### Hvorfor expires_at altid ser "udloebet" ud
 
-## Loesningen
+Med dit system-ur 1 time foran:
+- Server udsteder token med `iat = 13:02 UTC`, `expires_at = 14:02 UTC` (1770559322)
+- Din browsers `Date.now()` svarer til `14:02 UTC` (fordi dit ur er 1 time foran)
+- `expires_at * 1000 - Date.now() = ca. 0`
+- `0 < 90000` (EXPIRY_MARGIN_MS) => "udloebet!"
+- Hvert NYT token fra refresh har SAMME problem
 
-### 1. Kald stopAutoRefresh() EFTER getSession()
+## Loesningen: Storage-wrapper der justerer expires_at
+
+Da ALLE tre tjek laeser `expires_at` fra `this.storage`, kan vi loese problemet ved at wrappe storage-adapteren. Naar Supabase laeser sessionen, justerer vi `expires_at` saa den altid ser gyldig ud. Vores egen 55-minutters timer haandterer den faktiske refresh.
+
+### Fil 1: `src/lib/clock-skew-storage.ts` (NY)
+
+En storage-adapter der wrapper localStorage:
 
 ```text
-// FOER (forkert):
-supabase.auth.stopAutoRefresh();
-const { data: { session } } = await supabase.auth.getSession();
+class ClockSkewStorage {
+  private storageKeyPrefix: string;
 
-// EFTER (korrekt):
-const { data: { session } } = await supabase.auth.getSession();
-await supabase.auth.stopAutoRefresh();
-```
-
-Naar `getSession()` returnerer, er `_initialize()` faerdig, og `_handleVisibilityChange()` har koert. NU kan `stopAutoRefresh()` stoppe baade timer OG visibility-listener, og intet genstarter det.
-
-### 2. Brug FAST interval (55 minutter) i stedet for expires_at
-
-```text
-const REFRESH_INTERVAL_MS = 55 * 60 * 1000; // 55 minutter
-
-const scheduleRefresh = () => {
-  if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-  refreshTimerRef.current = setTimeout(performRefresh, REFRESH_INTERVAL_MS);
-  lastRefreshRef.current = Date.now();
-};
-```
-
-setTimeout bruger RELATIV tid (millisekunder fra nu), ikke absolut tid. Saa clock-skew er fuldstaendig irrelevant. Uanset hvad klientens ur viser, vil 55 minutter vaere 55 rigtige minutter.
-
-### 3. Haandter tab-synlighed manuelt
-
-Naar `stopAutoRefresh()` fjerner visibility-listeneren, mister vi evnen til at genoptage sessionen naar fanen bliver synlig igen (f.eks. efter computeren har vaeret i dvale). Vi tilfojer vores egen handler der refresher hvis der er gaaet mere end 5 minutter siden sidste refresh:
-
-```text
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && sessionRef.current) {
-    const elapsed = Date.now() - lastRefreshRef.current;
-    if (elapsed > 5 * 60 * 1000) {
-      performRefresh();
-    }
+  constructor() {
+    // Supabase storage key format: sb-<ref>-auth-token
+    this.storageKeyPrefix = 'sb-';
   }
-});
+
+  private isAuthKey(key: string): boolean {
+    return key.startsWith(this.storageKeyPrefix) && key.endsWith('-auth-token');
+  }
+
+  getItem(key: string): string | null {
+    const value = localStorage.getItem(key);
+    if (!value || !this.isAuthKey(key)) return value;
+
+    try {
+      const session = JSON.parse(value);
+      if (session && typeof session.expires_at === 'number') {
+        // Override expires_at to always appear valid (1 hour from NOW in client time)
+        // This prevents ALL internal expiry checks from triggering premature refreshes
+        session.expires_at = Math.floor(Date.now() / 1000) + 3600;
+        return JSON.stringify(session);
+      }
+    } catch { /* not JSON, return as-is */ }
+    return value;
+  }
+
+  setItem(key: string, value: string): void {
+    localStorage.setItem(key, value);
+  }
+
+  removeItem(key: string): void {
+    localStorage.removeItem(key);
+  }
+}
 ```
 
----
+Naar `__loadSession()`, `_recoverAndRefresh()` eller `_autoRefreshTokenTick()` laeser sessionen, ser de ALTID `expires_at` som 1 time fra nu. Med en EXPIRY_MARGIN paa 90 sekunder vil de ALDRIG trigge et refresh.
 
-## Fil der aendres
+### Fil 2: `src/lib/patch-supabase-auth.ts` (NY)
+
+En simpel funktion der patcher Supabase-klientens storage:
+
+```text
+import { supabase } from '@/integrations/supabase/client';
+import { ClockSkewStorage } from './clock-skew-storage';
+
+// Patch storage SYNCHRONOUSLY after import, before _initialize() reads from it.
+// This works because _initialize() is async (awaits navigator.locks)
+// and our synchronous patch runs before the first async read.
+(supabase.auth as any).storage = new ClockSkewStorage();
+```
+
+Denne fil importeres i `AuthContext.tsx` som det allerfoerste.
+
+### Fil 3: `src/contexts/AuthContext.tsx` (AENDRES)
+
+Aendringer:
+1. Importerer patch-filen som foerste import: `import '@/lib/patch-supabase-auth';`
+2. Beholder `stopAutoRefresh()` efter `getSession()` (ekstra sikkerhed)
+3. Beholder den kontrollerede 55-minutters refresh-timer
+4. Beholder visibility-handler for tab-genoptagelse
+5. Beholder `isRefreshingRef` guard mod samtidige refreshes
+
+Minimale aendringer - kun tilfoejelse af import-linjen.
+
+## Hvorfor dette virker
+
+1. **Storage-wrapperen rammer rod-aarsagen**: Alle tre steder der tjekker `expires_at` laeser fra `this.storage`. Ved at justere vaerdien ved laesning, ser de ALDRIG tokenet som udloebet.
+
+2. **Ingen kaskade mulig**: `__loadSession()` (som koerer paa HVER API-foresporgsel) vil aldrig trigge `_callRefreshToken()`, fordi `expires_at` altid er 1 time i fremtiden.
+
+3. **Vores timer haandterer refresh**: Den 55-minutters `setTimeout` bruger relativ tid og er immun over for clock-skew.
+
+4. **Patchet virker foer initialisering**: Fordi `_initialize()` er async og venter paa `navigator.locks`, naar vores synkrone patch at koere foer den foerste laesning fra storage.
+
+5. **Virker i baade Docker og Lovable**: Uafhaengig af clock-skew stoerrelse, fordi `expires_at` altid justeres relativt til klientens nuvaerende tid.
+
+6. **Ingen aendringer til auto-genererede filer**: `client.ts` forbliver uroert.
+
+## Filer der aendres
 
 | Fil | AEndring |
 |-----|---------|
-| `src/contexts/AuthContext.tsx` | Ret timing af stopAutoRefresh, brug fast interval, tilfoej visibility-handler |
+| `src/lib/clock-skew-storage.ts` | NY - Storage-adapter der justerer expires_at |
+| `src/lib/patch-supabase-auth.ts` | NY - Patcher Supabase-klientens storage |
+| `src/contexts/AuthContext.tsx` | Tilfoej import af patch-filen |
 
----
-
-## Tekniske detaljer
-
-### AuthContext.tsx - Komplette aendringer
-
-Nye konstanter og refs:
-
-```text
-const REFRESH_INTERVAL_MS = 55 * 60 * 1000; // 55 minutter - sikkert for 60-minutters tokens
-const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-const isRefreshingRef = useRef(false);
-const lastRefreshRef = useRef<number>(Date.now());
-```
-
-Ny scheduleRefresh (UDEN expires_at):
-
-```text
-const scheduleRefresh = useCallback(() => {
-  if (refreshTimerRef.current) {
-    clearTimeout(refreshTimerRef.current);
-    refreshTimerRef.current = null;
-  }
-  refreshTimerRef.current = setTimeout(() => {
-    performRefresh();
-  }, REFRESH_INTERVAL_MS);
-  lastRefreshRef.current = Date.now();
-}, [performRefresh]);
-```
-
-performRefresh forbliver naesten uaendret (beholder isRefreshingRef guard).
-
-Opdateret initializeAuth:
-
-```text
-const initializeAuth = async () => {
-  try {
-    // FOERST hent session (dette afventer _initialize() internt)
-    const { data: { session } } = await supabase.auth.getSession();
-
-    // NU er _initialize() faerdig og auto-refresh er startet.
-    // Stop det EFTER _initialize() saa det faktisk virker.
-    await supabase.auth.stopAutoRefresh();
-
-    if (!isMounted) return;
-
-    sessionRef.current = session ?? null;
-    setUser(session?.user ?? null);
-    currentUserIdRef.current = session?.user?.id ?? null;
-
-    if (session?.user) {
-      wasLoggedInRef.current = true;
-      scheduleRefresh(); // Fast 55-min timer
-      const adminResult = await checkAdminRole(session.user.id);
-      if (isMounted) setIsAdmin(adminResult);
-    }
-  } catch (err) {
-    console.error('Error initializing auth:', err);
-  } finally {
-    if (isMounted) setLoading(false);
-  }
-};
-```
-
-Opdateret onAuthStateChange:
-
-```text
-if (event === 'TOKEN_REFRESHED') {
-  if (session) {
-    sessionRef.current = session;
-    scheduleRefresh(); // Reset 55-min timer (aldrig ojeblikkelig refresh)
-  }
-  return;
-}
-
-if (event === 'SIGNED_IN' && session?.user) {
-  wasLoggedInRef.current = true;
-  if (currentUserIdRef.current !== session.user.id) {
-    currentUserIdRef.current = session.user.id;
-    sessionRef.current = session;
-    setUser(session.user);
-    scheduleRefresh();
-    checkAdminRole(session.user.id).then(result => {
-      if (isMounted) setIsAdmin(result);
-    });
-  } else {
-    sessionRef.current = session;
-    scheduleRefresh();
-  }
-}
-```
-
-Ny visibility-handler i useEffect:
-
-```text
-// Haandter tab-synlighed manuelt (da vi har stoppet Supabase's handler)
-const handleVisibilityChange = () => {
-  if (document.visibilityState === 'visible' && sessionRef.current) {
-    const elapsed = Date.now() - lastRefreshRef.current;
-    if (elapsed > 5 * 60 * 1000) { // Mere end 5 min siden sidste refresh
-      performRefresh();
-    }
-  }
-};
-document.addEventListener('visibilitychange', handleVisibilityChange);
-```
-
-Opdateret cleanup:
-
-```text
-return () => {
-  isMounted = false;
-  subscription.unsubscribe();
-  document.removeEventListener('visibilitychange', handleVisibilityChange);
-  if (refreshTimerRef.current) {
-    clearTimeout(refreshTimerRef.current);
-  }
-};
-```
-
----
-
-## Hvorfor dette virker (og er anderledes end foer)
-
-1. **stopAutoRefresh() EFTER getSession()**: Stopper auto-refresh EFTER _initialize() har koert faerdigt, saa intet genstarter det
-2. **Fast 55-min interval**: setTimeout bruger relativ tid, ikke absolut - fuldstaendig immun over for clock-skew
-3. **scheduleRefresh() kalder ALDRIG performRefresh() ojeblikkelig**: Bryder kaskadekaedenm uanset hvad
-4. **Visibility-handler**: Erstatter Supabase's fjernede handler, men med relativ tidsberegning (elapsed) i stedet for absolut expires_at
-5. **Virker identisk i Docker og Lovable**: Fordi loesningen er uafhaengig af klient-server tidssynkronisering
