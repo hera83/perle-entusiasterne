@@ -1,3 +1,5 @@
+// MUST be first import – patches storage before Supabase reads from it
+import '@/lib/patch-supabase-auth';
 import React, { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
