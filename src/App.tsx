@@ -11,6 +11,7 @@ import Favorites from "./pages/Favorites";
 import Administration from "./pages/Administration";
 import Workshop from "./pages/Workshop";
 import NotFound from "./pages/NotFound";
+import SharedPattern from "./pages/SharedPattern";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1 } },
@@ -31,6 +32,7 @@ const App = () => (
               <Route path="/administration" element={<Administration />} />
               <Route path="/workshop" element={<Workshop />} />
               <Route path="/workshop/:patternId" element={<Workshop />} />
+              <Route path="/opskrift/:shareToken" element={<SharedPattern />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

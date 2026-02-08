@@ -3,7 +3,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Heart, Eye, RotateCcw, Pencil, Trash2, Calendar, User, Grid3X3, Hash, Lock, Globe, FileDown, Loader2, Settings2 } from 'lucide-react';
+import { Heart, Eye, RotateCcw, Pencil, Trash2, Calendar, User, Grid3X3, Hash, Lock, Globe, FileDown, Loader2, Settings2, Link2 } from 'lucide-react';
 import { generatePatternPdf } from '@/lib/generatePatternPdf';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -75,7 +75,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
   const [totalPlates, setTotalPlates] = useState(0);
   const [completedPlates, setCompletedPlates] = useState(0);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
-
+  const [isCopyingLink, setIsCopyingLink] = useState(false);
   // Metadata dialog state
   const [metaDialogOpen, setMetaDialogOpen] = useState(false);
   const [editTitle, setEditTitle] = useState(pattern.title);
@@ -203,6 +203,44 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
       });
     } finally {
       setIsGeneratingPdf(false);
+    }
+  };
+
+  const handleShareLink = async () => {
+    if (isCopyingLink) return;
+    setIsCopyingLink(true);
+    try {
+      // Check if pattern already has a share_token
+      const { data: existing } = await supabase
+        .from('bead_patterns')
+        .select('share_token')
+        .eq('id', pattern.id)
+        .single();
+
+      let shareToken = (existing as any)?.share_token;
+
+      if (!shareToken) {
+        // Generate a new share token
+        shareToken = crypto.randomUUID();
+        const { error } = await supabase
+          .from('bead_patterns')
+          .update({ share_token: shareToken } as any)
+          .eq('id', pattern.id);
+
+        if (error) {
+          toast.error('Kunne ikke oprette delingslink');
+          return;
+        }
+      }
+
+      const url = `${window.location.origin}/opskrift/${shareToken}`;
+      await navigator.clipboard.writeText(url);
+      toast.success('Link kopieret til udklipsholder');
+    } catch (err) {
+      console.error('Error sharing link:', err);
+      toast.error('Kunne ikke kopiere linket');
+    } finally {
+      setIsCopyingLink(false);
     }
   };
 
@@ -390,6 +428,20 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <FileDown className="h-3.5 w-3.5" />
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleShareLink}
+              disabled={isCopyingLink}
+              className="h-7 w-7 p-0"
+              title="Kopiér delingslink"
+            >
+              {isCopyingLink ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Link2 className="h-3.5 w-3.5" />
               )}
             </Button>
           </div>
