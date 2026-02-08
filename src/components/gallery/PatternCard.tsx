@@ -210,30 +210,17 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
     if (isCopyingLink) return;
     setIsCopyingLink(true);
     try {
-      // Check if pattern already has a share_token
-      const { data: existing } = await supabase
-        .from('bead_patterns')
-        .select('share_token')
-        .eq('id', pattern.id)
-        .single();
+      const response = await supabase.functions.invoke('generate-share-token', {
+        body: { pattern_id: pattern.id },
+      });
 
-      let shareToken = (existing as any)?.share_token;
-
-      if (!shareToken) {
-        // Generate a new share token
-        shareToken = crypto.randomUUID();
-        const { error } = await supabase
-          .from('bead_patterns')
-          .update({ share_token: shareToken } as any)
-          .eq('id', pattern.id);
-
-        if (error) {
-          toast.error('Kunne ikke oprette delingslink');
-          return;
-        }
+      if (response.error || !response.data?.share_token) {
+        console.error('Error generating share token:', response.error);
+        toast.error('Kunne ikke oprette delingslink');
+        return;
       }
 
-      const url = `${window.location.origin}/opskrift/${shareToken}`;
+      const url = `${window.location.origin}/opskrift/${response.data.share_token}`;
       await navigator.clipboard.writeText(url);
       toast.success('Link kopieret til udklipsholder');
     } catch (err) {
