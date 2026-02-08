@@ -76,6 +76,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   onReplaceGlobal,
   onClearPlate,
   compact = false,
+  vertical = false,
 }) => {
   const ColorOption = ({ color }: { color: ColorInfo | null }) => (
     <div className="flex items-center gap-2">
