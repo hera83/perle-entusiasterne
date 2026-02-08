@@ -57,6 +57,7 @@ interface EditorToolbarProps {
   onReplaceGlobal: () => void;
   onClearPlate: () => void;
   compact?: boolean;
+  vertical?: boolean;
 }
 
 export const EditorToolbar: React.FC<EditorToolbarProps> = ({
