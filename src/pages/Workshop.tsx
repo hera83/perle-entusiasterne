@@ -50,7 +50,7 @@ export const Workshop: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className={`grid gap-6 ${isAdmin ? 'md:grid-cols-2 lg:grid-cols-3' : 'md:grid-cols-2'}`}>
           {/* Import billede */}
           <Card className="hover:shadow-lg transition-shadow cursor-pointer">
             <CardHeader>
@@ -130,10 +130,12 @@ export const Workshop: React.FC = () => {
               <strong>Ny opskrift:</strong> Start med et tomt lærred og tegn din egen opskrift.
               Perfekt til at skabe unikke designs.
             </li>
-            <li>
-              <strong>Farve-administration:</strong> Se og administrer alle tilgængelige perlefarver.
-              Du kan aktivere/deaktivere farver efter behov.
-            </li>
+            {isAdmin && (
+              <li>
+                <strong>Farve-administration:</strong> Se og administrer alle tilgængelige perlefarver.
+                Du kan aktivere/deaktivere farver efter behov.
+              </li>
+            )}
           </ol>
         </div>
 
