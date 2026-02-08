@@ -71,14 +71,6 @@ const SharedPattern: React.FC = () => {
     setLoading(true);
     setError(null);
 
-    const { data: result, error: fnError } = await supabase.functions.invoke('get-shared-pattern', {
-      body: null,
-      headers: {},
-      method: 'GET',
-    });
-
-    // Since supabase.functions.invoke doesn't support query params natively,
-    // we'll use a direct fetch instead
     try {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
