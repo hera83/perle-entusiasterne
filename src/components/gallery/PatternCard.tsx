@@ -75,7 +75,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
   const [totalPlates, setTotalPlates] = useState(0);
   const [completedPlates, setCompletedPlates] = useState(0);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
-
+  const [isCopyingLink, setIsCopyingLink] = useState(false);
   // Metadata dialog state
   const [metaDialogOpen, setMetaDialogOpen] = useState(false);
   const [editTitle, setEditTitle] = useState(pattern.title);
