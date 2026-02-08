@@ -1,125 +1,174 @@
 
 
-# Fix: Clock-skew-resistent auth via Storage-wrapper
+# 5 Blandede Rettelser
 
-## Rod-aarsagen (bekraeftet via kildekode-analyse)
+## 1. Vis kun fornavn paa opskrift-kort
 
-Problemet er IKKE kun i auto-refresh-timeren. Det sidder MEGET dybere i Supabase-klienten.
+**Nuvaerende**: PatternCard viser `pattern.creator_name` som er det fulde `display_name` fra profiles-tabellen.
 
-### Tre steder tjekker token-udloeb med `Date.now()`
+**Aendring**: Ekstraher foerste ord (fornavn) fra `creator_name` ved visning.
 
-1. **`_recoverAndRefresh()`** (ved initialisering): Tjekker `expires_at * 1000 - Date.now() < 90000`. Med 1-times clock-skew er resultatet altid `< 90000` => refresh.
-
-2. **`_autoRefreshTokenTick()`** (hvert 30. sekund): Tjekker `(expires_at * 1000 - now) / 30000 <= 3`. Med clock-skew er resultatet altid `<= 3` => refresh.
-
-3. **`__loadSession()`** (paa HVER ENESTE API-foresporgsel): Tjekker `expires_at * 1000 - Date.now() < 90000`. Denne kaldes ved ALLE database-kald, storage-kald og funktionskald, fordi `_getAccessToken()` kalder `getSession()` som kalder `__loadSession()`.
-
-Det er punkt 3 der er det virkelige problem. `stopAutoRefresh()` stopper kun punkt 2 (baggrunds-timeren). Men HVER gang du laver en database-foresporgsel, kører `__loadSession()` og ser tokenet som udløbet pga. clock-skew. Det trigger endnu en refresh. Hvis flere kald sker samtidigt (f.eks. ved navigation), faar du en kaskade.
-
-### Hvorfor expires_at altid ser "udloebet" ud
-
-Med dit system-ur 1 time foran:
-- Server udsteder token med `iat = 13:02 UTC`, `expires_at = 14:02 UTC` (1770559322)
-- Din browsers `Date.now()` svarer til `14:02 UTC` (fordi dit ur er 1 time foran)
-- `expires_at * 1000 - Date.now() = ca. 0`
-- `0 < 90000` (EXPIRY_MARGIN_MS) => "udloebet!"
-- Hvert NYT token fra refresh har SAMME problem
-
-## Loesningen: Storage-wrapper der justerer expires_at
-
-Da ALLE tre tjek laeser `expires_at` fra `this.storage`, kan vi loese problemet ved at wrappe storage-adapteren. Naar Supabase laeser sessionen, justerer vi `expires_at` saa den altid ser gyldig ud. Vores egen 55-minutters timer haandterer den faktiske refresh.
-
-### Fil 1: `src/lib/clock-skew-storage.ts` (NY)
-
-En storage-adapter der wrapper localStorage:
+### Filer der aendres:
+- `src/components/gallery/PatternCard.tsx` - Tilfoej en hjaepler til at tage foerste ord af `creator_name`
 
 ```text
-class ClockSkewStorage {
-  private storageKeyPrefix: string;
+// Linje 332: AEndre fra:
+<span className="truncate">{pattern.creator_name || 'Ukendt'}</span>
 
-  constructor() {
-    // Supabase storage key format: sb-<ref>-auth-token
-    this.storageKeyPrefix = 'sb-';
-  }
+// Til:
+<span className="truncate">{pattern.creator_name?.split(' ')[0] || 'Ukendt'}</span>
+```
 
-  private isAuthKey(key: string): boolean {
-    return key.startsWith(this.storageKeyPrefix) && key.endsWith('-auth-token');
-  }
+Det samme moenster anvendes ogsaa i PDF-generering (`generatePatternPdf.ts`), men der beholder vi fuldt navn da PDF er privat for brugeren.
 
-  getItem(key: string): string | null {
-    const value = localStorage.getItem(key);
-    if (!value || !this.isAuthKey(key)) return value;
+---
 
-    try {
-      const session = JSON.parse(value);
-      if (session && typeof session.expires_at === 'number') {
-        // Override expires_at to always appear valid (1 hour from NOW in client time)
-        // This prevents ALL internal expiry checks from triggering premature refreshes
-        session.expires_at = Math.floor(Date.now() / 1000) + 3600;
-        return JSON.stringify(session);
-      }
-    } catch { /* not JSON, return as-is */ }
-    return value;
-  }
+## 2. Farve-administration kun for administratorer
 
-  setItem(key: string, value: string): void {
-    localStorage.setItem(key, value);
-  }
+**Nuvaerende**: Alle indloggede brugere ser "Farve-administration" kortet i WorkShoppen.
 
-  removeItem(key: string): void {
-    localStorage.removeItem(key);
-  }
+**Aendring**: Brug `isAdmin` fra `useAuth()` til at skjule kortet for almindelige brugere.
+
+### Filer der aendres:
+- `src/pages/Workshop.tsx` - Tilfoej `isAdmin` fra useAuth og wrap Farve-administration kortet i `{isAdmin && (...)}`
+
+---
+
+## 3. Toolbar altid kompakt i plade-editoren
+
+**Nuvaerende**: PlateEditorDialog har en fuld vertikal toolbar i hoejre side, med mulighed for at minimere/udvide via en knap.
+
+**Aendring**: 
+- Fjern toggle-knappen (PanelLeft/PanelLeftClose)
+- Fjern `forceCompact` state og `autoCompact` logik
+- Altid vis den kompakte toolbar
+- Placer den kompakte toolbar i hoejre side (ikke under grid'et)
+
+### Filer der aendres:
+- `src/components/workshop/PlateEditorDialog.tsx`:
+  - Fjern `forceCompact` state, `windowWidth` state, resize-listener, `autoCompact`/`isCompact` beregninger
+  - Fjern toggle-knappen fra headeren
+  - AEndr layout til altid at bruge `flex-row` med den kompakte toolbar i hoejre side
+  - Toolbar-omraadet bliver en smal kolonne (`w-auto flex-shrink-0`) med den kompakte toolbar renderet vertikalt
+
+Kompakt toolbar layout i hoejre side:
+
+```text
+<div className="flex flex-row gap-4 overflow-hidden">
+  {/* Grid area */}
+  <ScrollArea className="flex-1 max-h-[70vh]">
+    <InteractiveBeadGrid ... />
+  </ScrollArea>
+
+  {/* Compact toolbar - right side, vertical strip */}
+  <div className="flex-shrink-0">
+    <EditorToolbar compact ... />
+  </div>
+</div>
+```
+
+Da compact-mode allerede renderer en horisontal toolbar med wrap, skal `EditorToolbar` ogsaa tilpasses til at vise ikonerne vertikalt naar den er i hoejre side. Vi tilfoej en `vertical` prop:
+
+- `src/components/workshop/EditorToolbar.tsx`:
+  - Tilfoej `vertical?: boolean` prop
+  - Naar `compact && vertical`: brug `flex-col` i stedet for `flex-row` / `flex-wrap`, saa ikonerne stables lodret
+
+---
+
+## 4. Vis brugerens fornavn i headeren
+
+**Nuvaerende**: Headeren viser ikke hvem der er logget ind.
+
+**Aendring**: Vis brugerens fornavn til venstre for Favoritter-knappen. Hent det fra `user.user_metadata.display_name` (sat ved oprettelse) eller fra profiles-tabellen.
+
+Da `user.user_metadata.display_name` allerede er tilgaengeligt paa auth-user objektet (det saettes ved signup/create-user), kan vi bruge det direkte uden ekstra database-kald.
+
+### Filer der aendres:
+- `src/components/layout/Header.tsx`:
+  - Ekstraher fornavn: `user?.user_metadata?.display_name?.split(' ')[0]`
+  - Vis det som tekst til venstre for Favoritter-knappen
+  - Skjules paa meget smaa skaerme (`hidden sm:block`)
+
+```text
+{user && (
+  <span className="text-sm font-medium hidden sm:block">
+    {user.user_metadata?.display_name?.split(' ')[0] || ''}
+  </span>
+)}
+```
+
+---
+
+## 5. Bruger-administration: rediger-popup og forbedret tabel
+
+### 5a. Tabel-aendringer
+
+**Nuvaerende kolonner**: Navn | Rolle (dropdown) | Oprettet | Handlinger (slet)
+
+**Nye kolonner**: Navn | Oprettet | Sidst logget ind | Handlinger (rediger + slet ikoner)
+
+- Fjern rolle-dropdown fra tabellen
+- Tilfoej "Sidst logget ind" kolonne
+- AEndr Handlinger til to ikon-knapper: Rediger (Pencil) og Slet (Trash2)
+- Vis rolle som Badge ved siden af navnet
+
+### 5b. Hent "sidst logget ind" via edge function
+
+Profiles-tabellen har ikke `last_sign_in_at`. Denne info findes kun i auth.users (via admin API). Vi opretter en ny edge function `admin-list-users` der:
+
+1. Verificerer at kalderen er admin
+2. Bruger `adminClient.auth.admin.listUsers()` til at hente alle brugeres `last_sign_in_at`
+3. Returnerer et map af `user_id -> last_sign_in_at`
+
+### 5c. Rediger-popup (ny dialog)
+
+En dialog der aabnes ved klik paa Rediger-ikonet, med felter for:
+- **Navn** (display_name) - opdateres i profiles-tabellen
+- **Email** - opdateres via edge function (admin API)
+- **Rolle** (admin/user dropdown) - opdateres i user_roles-tabellen
+- **Nulstil adgangskode** - knap der genererer en ny adgangskode via edge function
+
+### 5d. Edge function: `admin-manage-user`
+
+Ny edge function der haandterer admin-operationer:
+
+```text
+POST /admin-manage-user
+Body: {
+  action: 'list-users' | 'update-user' | 'reset-password',
+  userId?: string,
+  email?: string,
+  displayName?: string,
+  role?: 'admin' | 'user',
+  newPassword?: string,
 }
 ```
 
-Naar `__loadSession()`, `_recoverAndRefresh()` eller `_autoRefreshTokenTick()` laeser sessionen, ser de ALTID `expires_at` som 1 time fra nu. Med en EXPIRY_MARGIN paa 90 sekunder vil de ALDRIG trigge et refresh.
+Operationer:
+- `list-users`: Returnerer alle brugere med `last_sign_in_at` fra admin API
+- `update-user`: Opdaterer email (via admin API), display_name (profiles), rolle (user_roles)
+- `reset-password`: Saetter ny adgangskode via `adminClient.auth.admin.updateUserById()`
 
-### Fil 2: `src/lib/patch-supabase-auth.ts` (NY)
+### Filer der oprettes:
+- `supabase/functions/admin-manage-user/index.ts` - Ny edge function
 
-En simpel funktion der patcher Supabase-klientens storage:
+### Filer der aendres:
+- `src/components/admin/UserManagement.tsx` - Komplet redesign af tabel og tilfoejelse af rediger-dialog
 
-```text
-import { supabase } from '@/integrations/supabase/client';
-import { ClockSkewStorage } from './clock-skew-storage';
+### Database-aendringer:
+Ingen - vi bruger eksisterende tabeller og admin API via edge function.
 
-// Patch storage SYNCHRONOUSLY after import, before _initialize() reads from it.
-// This works because _initialize() is async (awaits navigator.locks)
-// and our synchronous patch runs before the first async read.
-(supabase.auth as any).storage = new ClockSkewStorage();
-```
+---
 
-Denne fil importeres i `AuthContext.tsx` som det allerfoerste.
-
-### Fil 3: `src/contexts/AuthContext.tsx` (AENDRES)
-
-Aendringer:
-1. Importerer patch-filen som foerste import: `import '@/lib/patch-supabase-auth';`
-2. Beholder `stopAutoRefresh()` efter `getSession()` (ekstra sikkerhed)
-3. Beholder den kontrollerede 55-minutters refresh-timer
-4. Beholder visibility-handler for tab-genoptagelse
-5. Beholder `isRefreshingRef` guard mod samtidige refreshes
-
-Minimale aendringer - kun tilfoejelse af import-linjen.
-
-## Hvorfor dette virker
-
-1. **Storage-wrapperen rammer rod-aarsagen**: Alle tre steder der tjekker `expires_at` laeser fra `this.storage`. Ved at justere vaerdien ved laesning, ser de ALDRIG tokenet som udloebet.
-
-2. **Ingen kaskade mulig**: `__loadSession()` (som koerer paa HVER API-foresporgsel) vil aldrig trigge `_callRefreshToken()`, fordi `expires_at` altid er 1 time i fremtiden.
-
-3. **Vores timer haandterer refresh**: Den 55-minutters `setTimeout` bruger relativ tid og er immun over for clock-skew.
-
-4. **Patchet virker foer initialisering**: Fordi `_initialize()` er async og venter paa `navigator.locks`, naar vores synkrone patch at koere foer den foerste laesning fra storage.
-
-5. **Virker i baade Docker og Lovable**: Uafhaengig af clock-skew stoerrelse, fordi `expires_at` altid justeres relativt til klientens nuvaerende tid.
-
-6. **Ingen aendringer til auto-genererede filer**: `client.ts` forbliver uroert.
-
-## Filer der aendres
+## Oversigt over alle filaendringer
 
 | Fil | AEndring |
 |-----|---------|
-| `src/lib/clock-skew-storage.ts` | NY - Storage-adapter der justerer expires_at |
-| `src/lib/patch-supabase-auth.ts` | NY - Patcher Supabase-klientens storage |
-| `src/contexts/AuthContext.tsx` | Tilfoej import af patch-filen |
+| `src/components/gallery/PatternCard.tsx` | Vis kun fornavn |
+| `src/pages/Workshop.tsx` | Skjul Farve-admin for ikke-admins |
+| `src/components/workshop/PlateEditorDialog.tsx` | Altid kompakt toolbar, hoejre side, fjern toggle |
+| `src/components/workshop/EditorToolbar.tsx` | Tilfoej `vertical` prop for lodret compact-layout |
+| `src/components/layout/Header.tsx` | Vis brugerens fornavn |
+| `src/components/admin/UserManagement.tsx` | Redesign tabel + tilfoej rediger-dialog |
+| `supabase/functions/admin-manage-user/index.ts` | NY - Admin bruger-operationer |
 
