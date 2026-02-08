@@ -130,10 +130,12 @@ export const Workshop: React.FC = () => {
               <strong>Ny opskrift:</strong> Start med et tomt lærred og tegn din egen opskrift.
               Perfekt til at skabe unikke designs.
             </li>
-            <li>
-              <strong>Farve-administration:</strong> Se og administrer alle tilgængelige perlefarver.
-              Du kan aktivere/deaktivere farver efter behov.
-            </li>
+            {isAdmin && (
+              <li>
+                <strong>Farve-administration:</strong> Se og administrer alle tilgængelige perlefarver.
+                Du kan aktivere/deaktivere farver efter behov.
+              </li>
+            )}
           </ol>
         </div>
 

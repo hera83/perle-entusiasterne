@@ -147,7 +147,6 @@ export const PatternEditor: React.FC = () => {
         const { data: colorsData, error: colorsError } = await supabase
           .from('bead_colors')
           .select('id, hex_color, name, code')
-          .eq('is_active', true)
           .order('code');
 
         if (colorsError) throw colorsError;

@@ -138,7 +138,7 @@ const drawOverviewPage = (
   y += 5;
 
   if (pattern.creator_name) {
-    doc.text(`Skaber: ${pattern.creator_name}`, margin, y);
+    doc.text(`Skaber: ${pattern.creator_name.split(' ')[0]}`, margin, y);
     y += 5;
   }
 
