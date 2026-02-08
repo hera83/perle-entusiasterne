@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
-interface PatternData {
+export interface PatternData {
   id: string;
   title: string;
   category_name: string | null;
@@ -13,14 +13,14 @@ interface PatternData {
   total_beads: number;
 }
 
-interface ColorInfo {
+export interface ColorInfo {
   id: string;
   hex_color: string;
   name: string;
   code: string;
 }
 
-interface PlateData {
+export interface PlateData {
   beads: { row: number; col: number; colorId: string | null }[];
   row_index: number;
   column_index: number;
