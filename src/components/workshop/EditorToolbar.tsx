@@ -57,6 +57,7 @@ interface EditorToolbarProps {
   onReplaceGlobal: () => void;
   onClearPlate: () => void;
   compact?: boolean;
+  vertical?: boolean;
 }
 
 export const EditorToolbar: React.FC<EditorToolbarProps> = ({
@@ -75,6 +76,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   onReplaceGlobal,
   onClearPlate,
   compact = false,
+  vertical = false,
 }) => {
   const ColorOption = ({ color }: { color: ColorInfo | null }) => (
     <div className="flex items-center gap-2">
@@ -92,7 +94,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   if (compact) {
     return (
       <TooltipProvider>
-        <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg flex-wrap">
+        <div className={`flex ${vertical ? 'flex-col' : 'items-center flex-wrap'} gap-2 p-2 bg-muted/50 rounded-lg`}>
           {/* Color Selection Popover */}
           <Popover>
             <Tooltip>
@@ -173,7 +175,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
             <TooltipContent>Fasthold farve (tegn ved at trække)</TooltipContent>
           </Tooltip>
 
-          <Separator orientation="vertical" className="h-8" />
+          <Separator orientation={vertical ? "horizontal" : "vertical"} className={vertical ? "w-full" : "h-8"} />
 
           {/* Replace Color Popover */}
           <Popover>

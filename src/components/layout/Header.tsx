@@ -35,6 +35,13 @@ export const Header: React.FC = () => {
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           ) : (
             <>
+              {/* User name display */}
+              {user && (
+                <span className="text-sm font-medium hidden sm:block text-foreground">
+                  {user.user_metadata?.display_name?.split(' ')[0] || ''}
+                </span>
+              )}
+
               {/* Favorites - only for logged in users */}
               {user && (
                 <Button
