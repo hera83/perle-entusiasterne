@@ -94,7 +94,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   if (compact) {
     return (
       <TooltipProvider>
-        <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg flex-wrap">
+        <div className={`flex ${vertical ? 'flex-col' : 'items-center flex-wrap'} gap-2 p-2 bg-muted/50 rounded-lg`}>
           {/* Color Selection Popover */}
           <Popover>
             <Tooltip>
