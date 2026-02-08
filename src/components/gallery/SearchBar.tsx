@@ -43,9 +43,6 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSearch, initialValue = '
           </button>
         )}
       </div>
-      <p className="mt-2 text-sm text-muted-foreground text-center">
-        Tip: Søgning starter automatisk mens du skriver
-      </p>
     </div>
   );
 };
