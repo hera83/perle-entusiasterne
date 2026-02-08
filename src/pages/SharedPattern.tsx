@@ -4,8 +4,10 @@ import { BeadPlateView } from '@/components/gallery/BeadPlateView';
 import { PatternPreview } from '@/components/gallery/PatternPreview';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ChevronLeft, ChevronRight, ArrowLeft, Grid3X3, Hash, User, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ArrowLeft, Grid3X3, Hash, User, Loader2, Download } from 'lucide-react';
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
+import { generatePatternPdfFromData } from '@/lib/generatePatternPdf';
+import type { PatternData, PlateData, ColorInfo } from '@/lib/generatePatternPdf';
 
 interface SharedPatternData {
   pattern: {
