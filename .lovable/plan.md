@@ -1,116 +1,135 @@
 
+# Fix: Clock-skew-resistent auth med korrekt stopAutoRefresh-timing
 
-# Fix: Genindfoer kontrolleret token-refresh (stop stormen)
+## Problemet (rod-aarsag identificeret)
 
-## Problemet
+Tre ting sammenspiller og skaber refresh-stormen:
 
-Netvaerksloggen viser tydeligt at **token-refresh stormen fortsaetter**. Inden for 2 sekunder sendes 5 refresh-requests, hvor den sidste rammer en 429 rate limit. Herefter er sessionen ugyldig og brugeren ser ud til at vaere logget ud.
+### 1. Klientens ur er 1 time foran serveren
 
-Aarsagen er at `client.ts` (auto-genereret, kan ikke aendres) har `autoRefreshToken: true`, som foraarsager at Supabase's interne refresh-mekanisme kaeder refresh-kald:
+Netvaerksloggen viser at browserens tid er 13:39:09Z mens serverens `iat` (issued-at) er 12:39:11 UTC - praecis 1 times forskel. Med Docker-containeren lokalt kan tidsforskellen vaere endnu stoerre.
+
+### 2. stopAutoRefresh() kaldes paa det forkerte tidspunkt
+
+Nuvaerende kode kalder `stopAutoRefresh()` FOER `getSession()`. Men `getSession()` afventer `_initialize()`, og i `_initialize()`'s finally-blok koerer `_handleVisibilityChange()` som GENSTARTER auto-refresh med en ny visibility-listener og setInterval. Saa vores stop-kald er virkningsloest.
 
 ```text
-Token expires snart
-  -> Built-in auto-refresh kalder refresh
-  -> TOKEN_REFRESHED event -> ny session med nyt refresh_token
-  -> Built-in auto-refresh ser nyt token, scheduler nyt refresh
-  -> Multiple interne timers kaskaderer
-  -> 4-5 refresh-kald paa under 2 sekunder
-  -> 429 rate limit
-  -> Session ugyldig
-  -> Brugeren er "logget ud"
+Nuvaerende raekkefoel:
+  stopAutoRefresh()          -> stopper timer (ok)
+  getSession()               -> afventer _initialize()
+    _initialize() finally:
+      _handleVisibilityChange()
+        _startAutoRefresh()  -> GENSTARTER timer!
+  ... auto-refresh koerer igen
 ```
 
-Den loesning der **virkede** for administrator-delen (disable built-in refresh + kontrolleret timer) blev ved en fejl fjernet i det forrige fix.
+### 3. scheduleRefresh bruger expires_at (absolut tid)
+
+Med 1 times clock-skew:
+- Serveren udsteder token med expires_at = serverNow + 3600
+- Klientens Date.now() = serverNow + 3600 (1 time foran)
+- refreshIn = (expires_at * 1000) - Date.now() - 60000 = 0 - 60000 = -60000
+- refreshIn er NEGATIVT = ojeblikkelig refresh
+- Hvert nyt token faar samme beregning = endeloes kaskade
+- Supabase's interne _autoRefreshTokenTick goer det SAMME = dobbelt kaskade
 
 ## Loesningen
 
-Genindfoer den kontrollerede refresh-strategi fra administrator-loesningen, men nu paa en maade der virker for ALLE brugere:
+### 1. Kald stopAutoRefresh() EFTER getSession()
 
-### 1. Stop Supabase's built-in auto-refresh (AuthContext.tsx)
+```text
+// FOER (forkert):
+supabase.auth.stopAutoRefresh();
+const { data: { session } } = await supabase.auth.getSession();
 
-Kald `supabase.auth.stopAutoRefresh()` som det allerfoerste i `initializeAuth`. Dette er den **officielle API** til at deaktivere den indbyggede refresh-mekanisme (i stedet for den gamle hacky property-override).
+// EFTER (korrekt):
+const { data: { session } } = await supabase.auth.getSession();
+await supabase.auth.stopAutoRefresh();
+```
 
-### 2. Kontrolleret manuel refresh-timer
+Naar `getSession()` returnerer, er `_initialize()` faerdig, og `_handleVisibilityChange()` har koert. NU kan `stopAutoRefresh()` stoppe baade timer OG visibility-listener, og intet genstarter det.
 
-Genindfoer en `scheduleRefresh`-funktion der:
-- Beregner hvornaar token udloeber (fra session.expires_at)
-- Saetter **et enkelt** setTimeout til at refreshe 60 sekunder foer udloeb
-- Bruger en `refreshTimerRef` til at forhindre dobbelte timers
-- Ved hvert TOKEN_REFRESHED event: opdaterer session-ref og re-scheduler timeren
+### 2. Brug FAST interval (55 minutter) i stedet for expires_at
 
-### 3. Beskyttelse mod samtidige refreshes
+```text
+const REFRESH_INTERVAL_MS = 55 * 60 * 1000; // 55 minutter
 
-Tilfoej en `isRefreshingRef` (boolean ref) der sikrer at kun EN refresh koerer ad gangen. Hvis en refresh allerede er i gang, ignoreres nye forsog.
+const scheduleRefresh = () => {
+  if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+  refreshTimerRef.current = setTimeout(performRefresh, REFRESH_INTERVAL_MS);
+  lastRefreshRef.current = Date.now();
+};
+```
+
+setTimeout bruger RELATIV tid (millisekunder fra nu), ikke absolut tid. Saa clock-skew er fuldstaendig irrelevant. Uanset hvad klientens ur viser, vil 55 minutter vaere 55 rigtige minutter.
+
+### 3. Haandter tab-synlighed manuelt
+
+Naar `stopAutoRefresh()` fjerner visibility-listeneren, mister vi evnen til at genoptage sessionen naar fanen bliver synlig igen (f.eks. efter computeren har vaeret i dvale). Vi tilfojer vores egen handler der refresher hvis der er gaaet mere end 5 minutter siden sidste refresh:
+
+```text
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && sessionRef.current) {
+    const elapsed = Date.now() - lastRefreshRef.current;
+    if (elapsed > 5 * 60 * 1000) {
+      performRefresh();
+    }
+  }
+});
+```
 
 ---
 
-## Filer der aendres
+## Fil der aendres
 
 | Fil | AEndring |
 |-----|---------|
-| `src/contexts/AuthContext.tsx` | Stop built-in auto-refresh, tilfoej kontrolleret timer |
+| `src/contexts/AuthContext.tsx` | Ret timing af stopAutoRefresh, brug fast interval, tilfoej visibility-handler |
 
 ---
 
 ## Tekniske detaljer
 
-### AuthContext.tsx - Nye refs og funktioner
+### AuthContext.tsx - Komplette aendringer
+
+Nye konstanter og refs:
 
 ```text
+const REFRESH_INTERVAL_MS = 55 * 60 * 1000; // 55 minutter - sikkert for 60-minutters tokens
 const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 const isRefreshingRef = useRef(false);
+const lastRefreshRef = useRef<number>(Date.now());
+```
 
-const scheduleRefresh = useCallback((session: Session) => {
-  // Ryd eksisterende timer
+Ny scheduleRefresh (UDEN expires_at):
+
+```text
+const scheduleRefresh = useCallback(() => {
   if (refreshTimerRef.current) {
     clearTimeout(refreshTimerRef.current);
     refreshTimerRef.current = null;
   }
-
-  if (!session.expires_at) return;
-
-  const expiresAt = session.expires_at * 1000; // sekunder -> ms
-  const now = Date.now();
-  const refreshIn = expiresAt - now - 60_000; // 60 sek foer udloeb
-
-  if (refreshIn <= 0) {
-    // Allerede udloebet eller taet paa - refresh med det samme
-    performRefresh();
-    return;
-  }
-
   refreshTimerRef.current = setTimeout(() => {
     performRefresh();
-  }, refreshIn);
-}, []);
-
-const performRefresh = async () => {
-  if (isRefreshingRef.current) return; // Forhindre dobbelt refresh
-  isRefreshingRef.current = true;
-
-  try {
-    const { data, error } = await supabase.auth.refreshSession();
-    if (error) {
-      console.error('Session refresh failed:', error.message);
-    }
-    // TOKEN_REFRESHED event haandterer resten
-  } catch (err) {
-    console.error('Error refreshing session:', err);
-  } finally {
-    isRefreshingRef.current = false;
-  }
-};
+  }, REFRESH_INTERVAL_MS);
+  lastRefreshRef.current = Date.now();
+}, [performRefresh]);
 ```
 
-### AuthContext.tsx - Opdateret initializeAuth
+performRefresh forbliver naesten uaendret (beholder isRefreshingRef guard).
+
+Opdateret initializeAuth:
 
 ```text
 const initializeAuth = async () => {
   try {
-    // STOP Supabase's built-in auto-refresh foerst
-    supabase.auth.stopAutoRefresh();
-
+    // FOERST hent session (dette afventer _initialize() internt)
     const { data: { session } } = await supabase.auth.getSession();
+
+    // NU er _initialize() faerdig og auto-refresh er startet.
+    // Stop det EFTER _initialize() saa det faktisk virker.
+    await supabase.auth.stopAutoRefresh();
+
     if (!isMounted) return;
 
     sessionRef.current = session ?? null;
@@ -119,7 +138,7 @@ const initializeAuth = async () => {
 
     if (session?.user) {
       wasLoggedInRef.current = true;
-      scheduleRefresh(session);
+      scheduleRefresh(); // Fast 55-min timer
       const adminResult = await checkAdminRole(session.user.id);
       if (isMounted) setIsAdmin(adminResult);
     }
@@ -131,13 +150,13 @@ const initializeAuth = async () => {
 };
 ```
 
-### AuthContext.tsx - Opdateret onAuthStateChange
+Opdateret onAuthStateChange:
 
 ```text
 if (event === 'TOKEN_REFRESHED') {
   if (session) {
     sessionRef.current = session;
-    scheduleRefresh(session); // Re-schedule naeste refresh
+    scheduleRefresh(); // Reset 55-min timer (aldrig ojeblikkelig refresh)
   }
   return;
 }
@@ -148,33 +167,51 @@ if (event === 'SIGNED_IN' && session?.user) {
     currentUserIdRef.current = session.user.id;
     sessionRef.current = session;
     setUser(session.user);
-    scheduleRefresh(session);
+    scheduleRefresh();
     checkAdminRole(session.user.id).then(result => {
       if (isMounted) setIsAdmin(result);
     });
   } else {
     sessionRef.current = session;
-    scheduleRefresh(session);
+    scheduleRefresh();
   }
 }
 ```
 
-### AuthContext.tsx - Cleanup
+Ny visibility-handler i useEffect:
+
+```text
+// Haandter tab-synlighed manuelt (da vi har stoppet Supabase's handler)
+const handleVisibilityChange = () => {
+  if (document.visibilityState === 'visible' && sessionRef.current) {
+    const elapsed = Date.now() - lastRefreshRef.current;
+    if (elapsed > 5 * 60 * 1000) { // Mere end 5 min siden sidste refresh
+      performRefresh();
+    }
+  }
+};
+document.addEventListener('visibilitychange', handleVisibilityChange);
+```
+
+Opdateret cleanup:
 
 ```text
 return () => {
   isMounted = false;
   subscription.unsubscribe();
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
   if (refreshTimerRef.current) {
     clearTimeout(refreshTimerRef.current);
   }
 };
 ```
 
-### Hvorfor dette virker
+---
 
-1. `stopAutoRefresh()` er Supabase's officielle API - den stopper den indbyggede timer paalideligt
-2. Vores egen timer koerer KUN en gang per session-fornyelse (ingen kaskade)
-3. `isRefreshingRef` sikrer at kun et refresh-kald koerer ad gangen
-4. Denne strategi er den SAMME der virkede for administrator-delen, nu anvendt globalt
+## Hvorfor dette virker (og er anderledes end foer)
 
+1. **stopAutoRefresh() EFTER getSession()**: Stopper auto-refresh EFTER _initialize() har koert faerdigt, saa intet genstarter det
+2. **Fast 55-min interval**: setTimeout bruger relativ tid, ikke absolut - fuldstaendig immun over for clock-skew
+3. **scheduleRefresh() kalder ALDRIG performRefresh() ojeblikkelig**: Bryder kaskadekaedenm uanset hvad
+4. **Visibility-handler**: Erstatter Supabase's fjernede handler, men med relativ tidsberegning (elapsed) i stedet for absolut expires_at
+5. **Virker identisk i Docker og Lovable**: Fordi loesningen er uafhaengig af klient-server tidssynkronisering
