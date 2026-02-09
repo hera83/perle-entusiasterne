@@ -31,6 +31,7 @@ export const AdminDashboard: React.FC = () => {
     totalDownloads: 0,
   });
   const [topDownloads, setTopDownloads] = useState<TopDownload[]>([]);
+  const [topDownloadsMonth, setTopDownloadsMonth] = useState<TopDownload[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
