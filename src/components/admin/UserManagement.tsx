@@ -89,6 +89,7 @@ export const UserManagement: React.FC = () => {
       const { data: profiles, error } = await supabase
         .from('profiles')
         .select('id, user_id, display_name, created_at, is_banned')
+        .eq('is_deleted', false)
         .order('created_at', { ascending: false });
 
       if (error) {
