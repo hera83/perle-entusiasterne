@@ -37,6 +37,7 @@ export const AdminDashboard: React.FC = () => {
   useEffect(() => {
     fetchStats();
     fetchTopDownloads();
+    fetchTopDownloadsMonth();
   }, []);
 
   const fetchStats = async () => {
