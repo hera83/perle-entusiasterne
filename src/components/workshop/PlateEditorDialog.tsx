@@ -125,8 +125,19 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
 
   const handleReplaceGlobal = useCallback(() => {
     if (!replaceFromColorId) return;
+    // Save local edits first so they aren't lost
+    onSave(beads);
+    // Execute global replacement
     onReplaceColorGlobal(replaceFromColorId, replaceToColorId);
-  }, [replaceFromColorId, replaceToColorId, onReplaceColorGlobal]);
+    // Update local state to match
+    setBeads(prev => prev.map(bead => {
+      if (bead.colorId === replaceFromColorId) {
+        return { ...bead, colorId: replaceToColorId };
+      }
+      return bead;
+    }).filter(bead => bead.colorId !== null));
+    setHasChanges(false);
+  }, [replaceFromColorId, replaceToColorId, onReplaceColorGlobal, onSave, beads]);
 
   const handleClearPlate = useCallback(() => {
     setBeads([]);

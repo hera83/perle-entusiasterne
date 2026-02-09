@@ -170,7 +170,7 @@ export const Gallery: React.FC = () => {
         <div className="text-center mb-4">
           <h1 className="text-3xl font-bold mb-1">Perle Entusiasterne</h1>
           <p className="text-muted-foreground">
-            Find inspiration, del glæde og byg med perler
+            Find inspiration, del glæde og perl med perler
           </p>
         </div>
 

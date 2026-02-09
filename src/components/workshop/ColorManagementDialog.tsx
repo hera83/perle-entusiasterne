@@ -89,8 +89,9 @@ export const ColorManagementDialog: React.FC<ColorManagementDialogProps> = ({
         variant: 'destructive',
       });
     } else {
-      setOriginalColors(data || []);
-      setColors((data || []).map(c => ({ ...c })));
+      const sorted = (data || []).sort((a, b) => parseInt(a.code) - parseInt(b.code));
+      setOriginalColors(sorted);
+      setColors(sorted.map(c => ({ ...c })));
     }
     setLoading(false);
   }, [toast]);

@@ -186,10 +186,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [scheduleRefresh, performRefresh]);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { error, data } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
+
+    if (!error && data?.user) {
+      // Check if user is banned
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_banned')
+        .eq('user_id', data.user.id)
+        .maybeSingle();
+
+      if (profile?.is_banned) {
+        await supabase.auth.signOut();
+        // Clear state
+        currentUserIdRef.current = null;
+        sessionRef.current = null;
+        setUser(null);
+        setIsAdmin(false);
+        return { error: new Error('Din konto er midlertidigt spærret. Kontakt en administrator for at blive låst op igen.') };
+      }
+    }
+
     return { error };
   }, []);
 

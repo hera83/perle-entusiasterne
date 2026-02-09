@@ -198,32 +198,67 @@ export const AdminDashboard: React.FC = () => {
         ))}
       </div>
 
-      {topDownloads.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Top 10 mest downloadede opskrifter</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12">#</TableHead>
-                  <TableHead>Opskrift</TableHead>
-                  <TableHead className="text-right">Downloads</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {topDownloads.map((item, index) => (
-                  <TableRow key={item.pattern_id}>
-                    <TableCell className="font-medium">{index + 1}</TableCell>
-                    <TableCell>{item.title}</TableCell>
-                    <TableCell className="text-right">{item.download_count.toLocaleString('da-DK')}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+      {(topDownloads.length > 0 || topDownloadsMonth.length > 0) && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Top 10 mest downloadede opskrifter</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {topDownloads.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">#</TableHead>
+                      <TableHead>Opskrift</TableHead>
+                      <TableHead className="text-right">Downloads</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {topDownloads.map((item, index) => (
+                      <TableRow key={item.pattern_id}>
+                        <TableCell className="font-medium">{index + 1}</TableCell>
+                        <TableCell>{item.title}</TableCell>
+                        <TableCell className="text-right">{item.download_count.toLocaleString('da-DK')}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-sm text-muted-foreground">Ingen downloads endnu</p>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Top 10 denne måned</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {topDownloadsMonth.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">#</TableHead>
+                      <TableHead>Opskrift</TableHead>
+                      <TableHead className="text-right">Downloads</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {topDownloadsMonth.map((item, index) => (
+                      <TableRow key={item.pattern_id}>
+                        <TableCell className="font-medium">{index + 1}</TableCell>
+                        <TableCell>{item.title}</TableCell>
+                        <TableCell className="text-right">{item.download_count.toLocaleString('da-DK')}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-sm text-muted-foreground">Ingen downloads denne måned</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );

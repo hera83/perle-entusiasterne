@@ -153,7 +153,8 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
         .eq('is_active', true)
         .order('code');
       if (error) throw error;
-      setBeadColors(data || []);
+      const sorted = (data || []).sort((a, b) => parseInt(a.code) - parseInt(b.code));
+      setBeadColors(sorted);
     } catch (error) {
       console.error('Error fetching colors:', error);
     }
