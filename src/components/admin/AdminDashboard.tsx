@@ -101,6 +101,42 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  const fetchTopDownloadsMonth = async () => {
+    try {
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+      const { data, error } = await supabase
+        .from('pdf_downloads')
+        .select('pattern_id, bead_patterns(title)')
+        .gte('downloaded_at', startOfMonth)
+        .order('downloaded_at', { ascending: false });
+
+      if (error || !data) return;
+
+      const countMap = new Map<string, { title: string; count: number }>();
+      for (const row of data) {
+        const pid = row.pattern_id;
+        const title = (row.bead_patterns as any)?.title || 'Ukendt';
+        const existing = countMap.get(pid);
+        if (existing) {
+          existing.count++;
+        } else {
+          countMap.set(pid, { title, count: 1 });
+        }
+      }
+
+      const sorted = Array.from(countMap.entries())
+        .map(([pattern_id, { title, count }]) => ({ pattern_id, title, download_count: count }))
+        .sort((a, b) => b.download_count - a.download_count)
+        .slice(0, 10);
+
+      setTopDownloadsMonth(sorted);
+    } catch (err) {
+      console.error('Error fetching monthly top downloads:', err);
+    }
+  };
+
   const statCards = [
     {
       title: 'Total opskrifter',
