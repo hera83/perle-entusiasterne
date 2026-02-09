@@ -53,6 +53,7 @@ interface User {
   role: 'admin' | 'user' | null;
   last_sign_in_at: string | null;
   email: string | null;
+  is_banned: boolean;
 }
 
 export const UserManagement: React.FC = () => {
