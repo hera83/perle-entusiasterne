@@ -41,7 +41,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Loader2, UserPlus, Pencil, Trash2, KeyRound } from 'lucide-react';
+import { Loader2, UserPlus, Pencil, Trash2, KeyRound, Ban, ShieldCheck } from 'lucide-react';
 import { format } from 'date-fns';
 import { da } from 'date-fns/locale';
 
