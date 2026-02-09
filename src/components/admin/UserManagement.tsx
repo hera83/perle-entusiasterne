@@ -88,7 +88,7 @@ export const UserManagement: React.FC = () => {
     try {
       const { data: profiles, error } = await supabase
         .from('profiles')
-        .select('id, user_id, display_name, created_at')
+        .select('id, user_id, display_name, created_at, is_banned')
         .order('created_at', { ascending: false });
 
       if (error) {
