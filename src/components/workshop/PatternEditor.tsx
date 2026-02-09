@@ -150,7 +150,8 @@ export const PatternEditor: React.FC = () => {
           .order('code');
 
         if (colorsError) throw colorsError;
-        setColors(colorsData || []);
+        const sorted = (colorsData || []).sort((a, b) => parseInt(a.code) - parseInt(b.code));
+        setColors(sorted);
 
       } catch (error) {
         console.error('Error fetching pattern:', error);

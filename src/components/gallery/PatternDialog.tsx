@@ -150,7 +150,8 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
       .select('id, hex_color, name, code');
 
     if (data) {
-      const colorMap = new Map(data.map(c => [c.id, { hex_color: c.hex_color, name: c.name, code: c.code }]));
+      const sorted = [...data].sort((a, b) => parseInt(a.code) - parseInt(b.code));
+      const colorMap = new Map(sorted.map(c => [c.id, { hex_color: c.hex_color, name: c.name, code: c.code }]));
       setColors(colorMap);
     }
   };

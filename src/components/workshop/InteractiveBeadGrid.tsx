@@ -1,9 +1,4 @@
 import React, { useState, useCallback } from 'react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 
 interface Bead {
   row: number;
@@ -132,38 +127,27 @@ export const InteractiveBeadGrid: React.FC<InteractiveBeadGridProps> = ({
             const isHovered = hoveredCell?.row === rowIndex && hoveredCell?.col === colIndex;
 
             return (
-              <Tooltip key={`bead-${rowIndex}-${colIndex}`}>
-                <TooltipTrigger asChild>
-                  <div
-                    style={{
-                      width: beadSize,
-                      height: beadSize,
-                      backgroundColor: bgColor,
-                      color: textColor,
-                    }}
-                    className={`
-                      flex items-center justify-center text-[8px] font-medium
-                      rounded-full bead-shadow
-                      border border-[hsl(var(--bead-grid))]
-                      transition-all duration-75
-                      ${!colorInfo ? 'bg-muted' : ''}
-                      ${isHovered ? 'ring-2 ring-primary ring-offset-1' : ''}
-                    `}
-                    onMouseDown={() => handleMouseDown(rowIndex, colIndex)}
-                    onMouseEnter={() => handleMouseEnter(rowIndex, colIndex)}
-                  >
-                    {code}
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p>
-                    {colorInfo 
-                      ? `${colorInfo.name} (${colorInfo.code})`
-                      : `Række ${rowIndex + 1}, Kolonne ${colIndex + 1}`
-                    }
-                  </p>
-                </TooltipContent>
-              </Tooltip>
+              <div
+                key={`bead-${rowIndex}-${colIndex}`}
+                style={{
+                  width: beadSize,
+                  height: beadSize,
+                  backgroundColor: bgColor,
+                  color: textColor,
+                }}
+                className={`
+                  flex items-center justify-center text-[8px] font-medium
+                  rounded-full bead-shadow
+                  border border-[hsl(var(--bead-grid))]
+                  transition-all duration-75
+                  ${!colorInfo ? 'bg-muted' : ''}
+                  ${isHovered ? 'ring-2 ring-primary ring-offset-1' : ''}
+                `}
+                onMouseDown={() => handleMouseDown(rowIndex, colIndex)}
+                onMouseEnter={() => handleMouseEnter(rowIndex, colIndex)}
+              >
+                {code}
+              </div>
             );
           })}
         </div>

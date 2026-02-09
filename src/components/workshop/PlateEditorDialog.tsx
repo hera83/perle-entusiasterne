@@ -125,8 +125,19 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
 
   const handleReplaceGlobal = useCallback(() => {
     if (!replaceFromColorId) return;
+    // Save local edits first so they aren't lost
+    onSave(beads);
+    // Execute global replacement
     onReplaceColorGlobal(replaceFromColorId, replaceToColorId);
-  }, [replaceFromColorId, replaceToColorId, onReplaceColorGlobal]);
+    // Update local state to match
+    setBeads(prev => prev.map(bead => {
+      if (bead.colorId === replaceFromColorId) {
+        return { ...bead, colorId: replaceToColorId };
+      }
+      return bead;
+    }).filter(bead => bead.colorId !== null));
+    setHasChanges(false);
+  }, [replaceFromColorId, replaceToColorId, onReplaceColorGlobal, onSave, beads]);
 
   const handleClearPlate = useCallback(() => {
     setBeads([]);
@@ -148,7 +159,7 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-[95vw] max-h-[95vh] w-auto" hideCloseButton>
+      <DialogContent className="max-w-[98vw] max-h-[95vh] w-auto" hideCloseButton>
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
@@ -184,7 +195,7 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
         <div className="flex flex-row gap-4 overflow-hidden">
           {/* Grid area */}
           <ScrollArea className="flex-1 max-h-[70vh]">
-            <div className="p-2">
+            <div className="p-4 pr-6">
               <InteractiveBeadGrid
                 beads={beads}
                 colors={colorMap}

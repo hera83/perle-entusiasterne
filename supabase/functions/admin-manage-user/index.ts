@@ -60,8 +60,8 @@ serve(async (req) => {
       );
     }
 
-    const { action, userId, email, displayName, role, newPassword } =
-      await req.json();
+    const body = await req.json();
+    const { action, userId, email, displayName, role, newPassword } = body;
 
     console.log(`Admin action: ${action} by user ${callerUser.id}`);
 
@@ -258,6 +258,77 @@ serve(async (req) => {
       }
 
       console.log(`User ${userId} deleted successfully`);
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // === BAN USER ===
+    if (action === "ban-user") {
+      if (!userId) {
+        return new Response(JSON.stringify({ error: "userId er påkrævet" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Check target is not admin
+      const { data: targetRole } = await adminClient
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .eq("role", "admin")
+        .maybeSingle();
+
+      if (targetRole) {
+        return new Response(JSON.stringify({ error: "Administratorer kan ikke spærres" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { error: banError } = await adminClient
+        .from("profiles")
+        .update({ is_banned: true })
+        .eq("user_id", userId);
+
+      if (banError) {
+        return new Response(JSON.stringify({ error: banError.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      console.log(`User ${userId} banned`);
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // === UNBAN USER ===
+    if (action === "unban-user") {
+      if (!userId) {
+        return new Response(JSON.stringify({ error: "userId er påkrævet" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { error: unbanError } = await adminClient
+        .from("profiles")
+        .update({ is_banned: false })
+        .eq("user_id", userId);
+
+      if (unbanError) {
+        return new Response(JSON.stringify({ error: unbanError.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      console.log(`User ${userId} unbanned`);
       return new Response(JSON.stringify({ success: true }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -41,7 +41,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Loader2, UserPlus, Pencil, Trash2, KeyRound } from 'lucide-react';
+import { Loader2, UserPlus, Pencil, Trash2, KeyRound, Ban, ShieldCheck } from 'lucide-react';
 import { format } from 'date-fns';
 import { da } from 'date-fns/locale';
 
@@ -53,6 +53,7 @@ interface User {
   role: 'admin' | 'user' | null;
   last_sign_in_at: string | null;
   email: string | null;
+  is_banned: boolean;
 }
 
 export const UserManagement: React.FC = () => {
@@ -87,7 +88,7 @@ export const UserManagement: React.FC = () => {
     try {
       const { data: profiles, error } = await supabase
         .from('profiles')
-        .select('id, user_id, display_name, created_at')
+        .select('id, user_id, display_name, created_at, is_banned')
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -121,6 +122,7 @@ export const UserManagement: React.FC = () => {
 
       const usersWithData: User[] = (profiles || []).map(profile => ({
         ...profile,
+        is_banned: (profile as any).is_banned ?? false,
         role: (roleMap.get(profile.user_id) as 'admin' | 'user') || null,
         last_sign_in_at: authMap[profile.user_id]?.last_sign_in_at || null,
         email: authMap[profile.user_id]?.email || null,
@@ -371,6 +373,11 @@ export const UserManagement: React.FC = () => {
                       <Badge variant={user.role === 'admin' ? 'default' : 'secondary'} className="text-[10px]">
                         {user.role === 'admin' ? 'Admin' : 'Bruger'}
                       </Badge>
+                      {user.is_banned && (
+                        <Badge variant="destructive" className="text-[10px]">
+                          Spærret
+                        </Badge>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -392,6 +399,28 @@ export const UserManagement: React.FC = () => {
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
+                      {user.role !== 'admin' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={`h-8 w-8 ${user.is_banned ? 'text-green-600 hover:text-green-600' : 'text-amber-600 hover:text-amber-600'}`}
+                          onClick={async () => {
+                            const action = user.is_banned ? 'unban-user' : 'ban-user';
+                            const { data, error } = await supabase.functions.invoke('admin-manage-user', {
+                              body: { action, userId: user.user_id },
+                            });
+                            if (error || data?.error) {
+                              toast.error(data?.error || error?.message || 'Handling fejlede');
+                            } else {
+                              toast.success(user.is_banned ? 'Bruger aktiveret' : 'Bruger spærret');
+                              fetchUsers();
+                            }
+                          }}
+                          title={user.is_banned ? 'Aktiver bruger' : 'Spær bruger'}
+                        >
+                          {user.is_banned ? <ShieldCheck className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+                        </Button>
+                      )}
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" title="Slet bruger">
