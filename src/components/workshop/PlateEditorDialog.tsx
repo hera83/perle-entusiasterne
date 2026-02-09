@@ -184,7 +184,7 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
         <div className="flex flex-row gap-4 overflow-hidden">
           {/* Grid area */}
           <ScrollArea className="flex-1 max-h-[70vh]">
-            <div className="p-2">
+            <div className="p-4 pr-6">
               <InteractiveBeadGrid
                 beads={beads}
                 colors={colorMap}
