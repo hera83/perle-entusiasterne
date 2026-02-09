@@ -1,122 +1,118 @@
 
 
-# 6 rettelser fra brugertests
+# Soft-delete bruger-system + oprydning af karsten@test.dk
 
-## 1. Fjern tooltip i plade-editoren og goer dialogen bredere
+## Oversigt
 
-**Problem**: Tooltip-popuppen paa perler i redigerings-dialogen generer brugeren og bloekerer adgang til naboeperlerne. Derudover er perlepladen lidt klemt saa scrollbaren gaar ind over den.
+Ny slettelogik: Hvis en bruger har opskrifter, soft-deletes den (markeres som slettet, skjules fra admin). Hvis ingen opskrifter, slettes den helt. Ved genbrug af email genaktiveres den soft-deletede bruger.
 
-**Loesning**:
-- **InteractiveBeadGrid.tsx**: Fjern Tooltip-wrapperen helt fra perlerne i editoren. Behold kun den rene `<div>` med mouse-handlers. Tooltip giver ingen vaerdi under redigering - brugeren kan allerede se farvekoden paa perlen.
-- **PlateEditorDialog.tsx**: Goer dialogen bredere ved at aendre `max-w-[95vw]` til `max-w-[98vw]` og tilfoej mere padding til scroll-omraadet.
+## Oprydning
 
-**Filer**: `src/components/workshop/InteractiveBeadGrid.tsx`, `src/components/workshop/PlateEditorDialog.tsx`
+Sletter `karsten@test.dk` fra auth-systemet (har ingen profil, roller eller opskrifter - kun en foraeldre-loes auth-post).
 
----
+## Database-aendring
 
-## 2. Spaer/laaas brugere i administrationen
-
-**Problem**: Administratorer skal kunne spaerre en bruger (ikke admin), saa de ikke kan logge ind. Ved login-forsoeg skal brugeren se en besked om at kontakte en administrator.
-
-**Loesning**:
-- **Database**: Tilfoej en `is_banned` boolean kolonne til `profiles` tabellen (default `false`).
-- **Edge function** (`admin-manage-user`): Tilfoej en ny action `ban-user` og `unban-user` der saetter `is_banned` flaget. Beskyt mod at spaerre administratorer.
-- **AuthContext.tsx**: Efter succesfuldt login, tjek `profiles.is_banned`. Hvis `true`, vis fejlbesked og kald `signOut()` med det samme.
-- **UserManagement.tsx**: Tilfoej en "Spaer"/"Aktiver" knap per bruger (ikke vist for admin-brugere). Vis status med et badge.
-
-**Filer**: Database migration, `supabase/functions/admin-manage-user/index.ts`, `src/contexts/AuthContext.tsx`, `src/components/admin/UserManagement.tsx`
-
----
-
-## 3. Sorter farver numerisk efter kode
-
-**Problem**: Farver sorteres som strenge i databasen (`order('code')`), saa "109" kommer foer "11". Brugeren forventer numerisk sortering.
-
-**Loesning**: I alle steder hvor farver hentes og sorteres, tilfoej en klient-side sort efter fetch:
-```text
-colors.sort((a, b) => parseInt(a.code) - parseInt(b.code))
-```
-
-Dette skal goeres i:
-- `PatternEditor.tsx` (linje 150)
-- `ImportImageDialog.tsx` (linje 154)
-- `ColorManagementDialog.tsx` (linje 83)
-- `EditorToolbar.tsx` (alle dropdown-lister bruger `colors` prop'en - sorteres foer den sendes)
-- `PatternDialog.tsx` (linje 150)
-- `generatePatternPdf.ts` (linje 400)
-
-Alternativt: da `code` altid er et heltal, kan vi tilfoeje `::int` cast i SQL-queryen, men det er ikke muligt via Supabase JS client. Klient-side sort er den simpleste og mest konsistente loesning.
-
-**Filer**: Alle filer der fetcher fra `bead_colors`
-
----
-
-## 4. Top 10 downloads - to kolonner (total og denne maaned)
-
-**Problem**: Admin-dashboardet viser kun een total top-10 liste. Brugeren oensker en side-by-side visning med "alle tider" til venstre og "denne maaned" til hoejre.
-
-**Loesning**:
-- **AdminDashboard.tsx**: Tilfoej en ny state `topDownloadsMonth` og en `fetchTopDownloadsMonth()` funktion der filtrerer paa `downloaded_at >= start af aktuel maaned`.
-- Vis de to tabeller side om side i et 2-kolonne grid layout.
-
-**Filer**: `src/components/admin/AdminDashboard.tsx`
-
----
-
-## 5. Gem aendringer foer "erstat farve" paa pladen
-
-**Problem**: Naar brugeren redigerer perler manuelt og derefter bruger "erstat farve paa plade", nulstilles de manuelle aendringer fordi erstatningen koerer paa den lokale `beads` state som allerede indeholder aendringerne, men `handleReplaceOnPlate` i `PlateEditorDialog` arbejder korrekt paa den lokale state. 
-
-Lad mig kigge naermere... Faktisk ser koden korrekt ud: `handleReplaceOnPlate` kalder `setBeads(prev => ...)` som arbejder paa den aktuelle lokale state. Problemet maa vaere med "Alle plader" (global replace) - den kalder `onReplaceColorGlobal` som opdaterer parent-state, og naar dialogen lukkes/genaabnes, resetter den lokale state fra den nye `initialBeads` som nu er aendret af global replace, men de lokale ugemte aendringer gaar tabt.
-
-**Loesning**: I `PlateEditorDialog`, naar `handleReplaceGlobal` kaldes: gem foerst de lokale aendringer til parent via `onSave(beads)`, og derefter kald `onReplaceColorGlobal`. Opdater ogsaa den lokale state med farve-erstatningen saa dialogen forbliver synkroniseret.
+Tilfoej `is_deleted` boolean kolonne til `profiles` tabellen (default `false`).
 
 ```text
-const handleReplaceGlobal = useCallback(() => {
-  if (!replaceFromColorId) return;
-  // 1. Gem lokale aendringer foerst
-  onSave(beads);
-  // 2. Udfoerf global erstatning (opdaterer ALLE plader inkl. den aktuelle)
-  onReplaceColorGlobal(replaceFromColorId, replaceToColorId);
-  // 3. Opdater lokal state saa den matcher
-  setBeads(prev => prev.map(bead => {
-    if (bead.colorId === replaceFromColorId) {
-      return { ...bead, colorId: replaceToColorId };
-    }
-    return bead;
-  }).filter(bead => bead.colorId !== null));
-}, [...]);
+ALTER TABLE public.profiles ADD COLUMN is_deleted boolean NOT NULL DEFAULT false;
 ```
 
-**Filer**: `src/components/workshop/PlateEditorDialog.tsx`
+## Edge function: `admin-manage-user` - ny delete-logik
 
----
+Aendr `delete-user` action:
 
-## 6. AEndr galleri-undertekst
+1. Tjek om brugeren har opskrifter i `bead_patterns`
+2. **Ingen opskrifter**: Slet helt (user_roles, profiles, auth user) - som nu
+3. **Har opskrifter**: Soft-delete:
+   - Saet `is_deleted = true` og `is_banned = true` paa profilen
+   - Slet fra `user_roles`
+   - Slet auth-brugeren (saa email frigives til genbrug)
 
-**Problem**: Underteksten skal aendres fra "byg med perler" til "perl med perler".
+## Edge function: `create-user` - genaktivering
 
-**Loesning**: Simpel tekstaendring i `Gallery.tsx` linje 173.
+Aendr oprettelses-flowet:
 
-**Filer**: `src/pages/Gallery.tsx`
+1. Foer oprettelse, tjek om der findes en profil med `is_deleted = true` for en bruger med samme email (via auth admin API lookup eller direkte)
+2. Faktisk, da auth-brugeren er slettet ved soft-delete, vil `createUser` bare oprette en ny auth-bruger
+3. Efter oprettelse, tjek om der findes en profil med `is_deleted = true` og samme email-display (vi kan ikke matche paa email i profiles da den ikke er gemt der)
 
----
+**Bedre tilgang**: Gem email i profiles-tabellen saa vi kan matche ved genoprettelse.
 
-## Teknisk oversigt
+Revideret plan:
+- Tilfoej `email` kolonne til `profiles` (nullable, udfyldes ved oprettelse)
+- Ved soft-delete: behold profilen med `is_deleted = true`, slet auth-bruger
+- Ved oprettelse: Foer auth.createUser, tjek om der findes en soft-deleted profil med samme email. Hvis ja:
+  - Opret ny auth-bruger
+  - Opdater den eksisterende profil: saet `is_deleted = false`, `is_banned = false`, opdater `user_id` til den nye auth-brugers id, opdater `display_name`
+  - Dette bevarer forbindelsen til eksisterende opskrifter via det gamle `user_id`
+
+**Vent** - opskrifterne peger paa det GAMLE `user_id`. Hvis vi opdaterer profilens `user_id` til den nye auth-bruger, mister vi forbindelsen til opskrifterne.
+
+**Endelig tilgang**:
+1. Soft-delete: Saet `is_deleted = true`, `is_banned = true` paa profil. Slet auth-bruger. Behold `user_id` uaendret.
+2. Genoprettelse: Opret ny auth-bruger. Opdater ALLE opskrifter (`bead_patterns.user_id`) til den nye brugers id. Opdater profilens `user_id` til den nye bruger. Saet `is_deleted = false`, `is_banned = false`.
+
+## Database-aendringer
+
+```text
+ALTER TABLE public.profiles ADD COLUMN is_deleted boolean NOT NULL DEFAULT false;
+ALTER TABLE public.profiles ADD COLUMN email text;
+```
+
+Opdater eksisterende profiler med emails fra auth:
+```text
+-- Koeres manuelt via edge function eller migration
+```
+
+## Filer der aendres
 
 | Fil | AEndring |
 |-----|---------|
-| `src/components/workshop/InteractiveBeadGrid.tsx` | Fjern Tooltip fra perler |
-| `src/components/workshop/PlateEditorDialog.tsx` | Bredere dialog + gem foer global replace |
-| Database migration | Tilfoej `is_banned` til `profiles` |
-| `supabase/functions/admin-manage-user/index.ts` | Tilfoej ban/unban actions |
-| `src/contexts/AuthContext.tsx` | Tjek `is_banned` ved login |
-| `src/components/admin/UserManagement.tsx` | Tilfoej spaer/aktiver knap og status |
-| `src/components/workshop/PatternEditor.tsx` | Numerisk sort af farver |
-| `src/components/workshop/ImportImageDialog.tsx` | Numerisk sort af farver |
-| `src/components/workshop/ColorManagementDialog.tsx` | Numerisk sort af farver |
-| `src/components/gallery/PatternDialog.tsx` | Numerisk sort af farver |
-| `src/lib/generatePatternPdf.ts` | Numerisk sort af farver |
-| `src/components/admin/AdminDashboard.tsx` | To-kolonne top 10 layout |
-| `src/pages/Gallery.tsx` | AEndr undertekst |
+| Database migration | Tilfoej `is_deleted` og `email` til profiles |
+| `supabase/functions/admin-manage-user/index.ts` | Ny delete-logik med soft-delete check |
+| `supabase/functions/create-user/index.ts` | Genaktiverings-logik ved oprettelse med eksisterende slettet email |
+| `src/components/admin/UserManagement.tsx` | Filtrer `is_deleted` brugere fra visningen |
+
+## Detaljeret edge function logik
+
+### delete-user (admin-manage-user)
+
+```text
+1. Hent antal opskrifter for userId
+2. IF opskrifter == 0:
+   - Slet user_roles, profiles, auth user (som nu)
+3. ELSE:
+   - Hent brugerens email fra auth
+   - Opdater profiles: is_deleted=true, is_banned=true, gem email
+   - Slet user_roles
+   - Slet auth user
+```
+
+### create-user
+
+```text
+1. Modtag email, password, displayName, role
+2. Tjek om der findes en profil med is_deleted=true og email=input email
+3. IF soft-deleted profil findes:
+   a. Opret ny auth-bruger
+   b. Opdater bead_patterns: saet user_id = ny bruger id WHERE user_id = gammel profil user_id
+   c. Opdater bead_plates via pattern_id (automatisk pga. RLS peger paa patterns)
+   d. Opdater user_favorites, user_progress ligeledes
+   e. Opdater profil: user_id = ny bruger id, is_deleted=false, is_banned=false, display_name, email
+   f. Tilfoej user_roles
+4. ELSE:
+   a. Opret bruger som normalt
+```
+
+### UserManagement.tsx
+
+Tilfoej filter i `fetchUsers`:
+```text
+.eq('is_deleted', false)
+```
+
+## Oprydning af karsten@test.dk
+
+Slet auth-brugeren `3c477f1c-587b-422d-a0ab-fec0b9182a03` via migration eller direkte kald. Da der ingen profil eller data er, er det en ren sletning.
 
