@@ -60,8 +60,8 @@ serve(async (req) => {
       );
     }
 
-    const { action, userId, email, displayName, role, newPassword } =
-      await req.json();
+    const body = await req.json();
+    const { action, userId, email, displayName, role, newPassword } = body;
 
     console.log(`Admin action: ${action} by user ${callerUser.id}`);
 
