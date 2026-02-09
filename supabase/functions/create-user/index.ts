@@ -12,7 +12,6 @@ serve(async (req) => {
   }
 
   try {
-    // Verify the caller is an admin
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Ikke autoriseret" }), {
@@ -24,7 +23,6 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    // Client with caller's token to verify admin
     const callerClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -37,7 +35,6 @@ serve(async (req) => {
       });
     }
 
-    // Check admin role
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
     const { data: roleData } = await adminClient
       .from("user_roles")
@@ -53,7 +50,6 @@ serve(async (req) => {
       });
     }
 
-    // Parse request body
     const { email, password, displayName, role } = await req.json();
 
     if (!email || !password || !displayName) {
@@ -63,7 +59,79 @@ serve(async (req) => {
       });
     }
 
-    // Create user with admin API (does NOT affect caller's session)
+    // Check for soft-deleted profile with same email
+    const { data: deletedProfile } = await adminClient
+      .from("profiles")
+      .select("id, user_id")
+      .eq("email", email)
+      .eq("is_deleted", true)
+      .maybeSingle();
+
+    if (deletedProfile) {
+      // REACTIVATION: Create new auth user, transfer data to new user_id
+      console.log(`Reactivating soft-deleted profile for ${email}`);
+
+      const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { display_name: displayName },
+      });
+
+      if (createError) {
+        return new Response(JSON.stringify({ error: createError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const oldUserId = deletedProfile.user_id;
+      const newUserId = newUser.user!.id;
+
+      // Transfer all patterns to new user
+      await adminClient
+        .from("bead_patterns")
+        .update({ user_id: newUserId })
+        .eq("user_id", oldUserId);
+
+      // Transfer favorites and progress
+      await adminClient
+        .from("user_favorites")
+        .update({ user_id: newUserId })
+        .eq("user_id", oldUserId);
+
+      await adminClient
+        .from("user_progress")
+        .update({ user_id: newUserId })
+        .eq("user_id", oldUserId);
+
+      // Update profile: new user_id, reactivate
+      await adminClient
+        .from("profiles")
+        .update({
+          user_id: newUserId,
+          display_name: displayName,
+          email,
+          is_deleted: false,
+          is_banned: false,
+        })
+        .eq("id", deletedProfile.id);
+
+      // Assign role
+      if (role) {
+        await adminClient
+          .from("user_roles")
+          .insert({ user_id: newUserId, role });
+      }
+
+      console.log(`Reactivated user: old=${oldUserId}, new=${newUserId}`);
+      return new Response(
+        JSON.stringify({ success: true, userId: newUserId, reactivated: true }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // NORMAL CREATION: No soft-deleted profile found
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
       email,
       password,
@@ -72,6 +140,13 @@ serve(async (req) => {
     });
 
     if (createError) {
+      // Better error message for duplicate email
+      if (createError.message?.includes("already been registered") || createError.message?.includes("email_exists")) {
+        return new Response(JSON.stringify({ error: "Denne email er allerede i brug" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       return new Response(JSON.stringify({ error: createError.message }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -79,10 +154,10 @@ serve(async (req) => {
     }
 
     if (newUser.user) {
-      // Update display name in profile
+      // Update profile with email and display name
       await adminClient
         .from("profiles")
-        .update({ display_name: displayName })
+        .update({ display_name: displayName, email })
         .eq("user_id", newUser.user.id);
 
       // Assign role

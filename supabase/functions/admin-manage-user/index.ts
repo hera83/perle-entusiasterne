@@ -80,7 +80,6 @@ serve(async (req) => {
         });
       }
 
-      // Return map of user_id -> { last_sign_in_at, email }
       const userMap: Record<
         string,
         { last_sign_in_at: string | null; email: string | null }
@@ -110,7 +109,6 @@ serve(async (req) => {
         );
       }
 
-      // Update email via admin API if provided
       if (email) {
         const { error: emailError } =
           await adminClient.auth.admin.updateUserById(userId, { email });
@@ -124,9 +122,13 @@ serve(async (req) => {
             }
           );
         }
+        // Also update email in profiles
+        await adminClient
+          .from("profiles")
+          .update({ email })
+          .eq("user_id", userId);
       }
 
-      // Update display_name in profiles if provided
       if (displayName !== undefined) {
         const { error: nameError } = await adminClient
           .from("profiles")
@@ -136,13 +138,11 @@ serve(async (req) => {
           console.error("Error updating display name:", nameError);
         }
 
-        // Also update user_metadata
         await adminClient.auth.admin.updateUserById(userId, {
           user_metadata: { display_name: displayName },
         });
       }
 
-      // Update role if provided
       if (role) {
         const { data: existing } = await adminClient
           .from("user_roles")
@@ -173,9 +173,7 @@ serve(async (req) => {
     if (action === "reset-password") {
       if (!userId || !newPassword) {
         return new Response(
-          JSON.stringify({
-            error: "userId og newPassword er påkrævet",
-          }),
+          JSON.stringify({ error: "userId og newPassword er påkrævet" }),
           {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -185,9 +183,7 @@ serve(async (req) => {
 
       if (newPassword.length < 6) {
         return new Response(
-          JSON.stringify({
-            error: "Adgangskoden skal være mindst 6 tegn",
-          }),
+          JSON.stringify({ error: "Adgangskoden skal være mindst 6 tegn" }),
           {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -230,31 +226,71 @@ serve(async (req) => {
         );
       }
 
-      // Delete from user_roles first
-      await adminClient
-        .from("user_roles")
-        .delete()
+      // Check if user has any patterns
+      const { count: patternCount, error: countError } = await adminClient
+        .from("bead_patterns")
+        .select("id", { count: "exact", head: true })
         .eq("user_id", userId);
 
-      // Delete from profiles
-      await adminClient
-        .from("profiles")
-        .delete()
-        .eq("user_id", userId);
-
-      // Delete auth user via admin API
-      const { error: deleteError } =
-        await adminClient.auth.admin.deleteUser(userId);
-
-      if (deleteError) {
-        console.error("Error deleting user:", deleteError);
+      if (countError) {
+        console.error("Error counting patterns:", countError);
         return new Response(
-          JSON.stringify({ error: deleteError.message }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          JSON.stringify({ error: "Kunne ikke tjekke brugerens opskrifter" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
+      }
+
+      if ((patternCount || 0) === 0) {
+        // HARD DELETE: No patterns, delete everything
+        console.log(`Hard deleting user ${userId} (no patterns)`);
+
+        await adminClient.from("user_favorites").delete().eq("user_id", userId);
+        await adminClient.from("user_progress").delete().eq("user_id", userId);
+        await adminClient.from("user_roles").delete().eq("user_id", userId);
+        await adminClient.from("profiles").delete().eq("user_id", userId);
+
+        const { error: deleteError } =
+          await adminClient.auth.admin.deleteUser(userId);
+
+        if (deleteError) {
+          console.error("Error deleting user:", deleteError);
+          return new Response(
+            JSON.stringify({ error: deleteError.message }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } else {
+        // SOFT DELETE: Has patterns, keep profile but mark as deleted
+        console.log(`Soft deleting user ${userId} (${patternCount} patterns)`);
+
+        // Get email from auth before deleting
+        const { data: { user: authUser } } = await adminClient.auth.admin.getUserById(userId);
+        const userEmail = authUser?.email || null;
+
+        // Mark profile as deleted, store email for future reactivation
+        await adminClient
+          .from("profiles")
+          .update({ is_deleted: true, is_banned: true, email: userEmail })
+          .eq("user_id", userId);
+
+        // Delete roles
+        await adminClient.from("user_roles").delete().eq("user_id", userId);
+
+        // Delete favorites and progress
+        await adminClient.from("user_favorites").delete().eq("user_id", userId);
+        await adminClient.from("user_progress").delete().eq("user_id", userId);
+
+        // Delete auth user (frees email for reuse)
+        const { error: deleteError } =
+          await adminClient.auth.admin.deleteUser(userId);
+
+        if (deleteError) {
+          console.error("Error deleting auth user:", deleteError);
+          return new Response(
+            JSON.stringify({ error: deleteError.message }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
       }
 
       console.log(`User ${userId} deleted successfully`);
@@ -273,7 +309,6 @@ serve(async (req) => {
         });
       }
 
-      // Check target is not admin
       const { data: targetRole } = await adminClient
         .from("user_roles")
         .select("role")
