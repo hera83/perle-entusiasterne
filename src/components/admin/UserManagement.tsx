@@ -122,6 +122,7 @@ export const UserManagement: React.FC = () => {
 
       const usersWithData: User[] = (profiles || []).map(profile => ({
         ...profile,
+        is_banned: (profile as any).is_banned ?? false,
         role: (roleMap.get(profile.user_id) as 'admin' | 'user') || null,
         last_sign_in_at: authMap[profile.user_id]?.last_sign_in_at || null,
         email: authMap[profile.user_id]?.email || null,
