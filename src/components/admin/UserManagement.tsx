@@ -373,6 +373,11 @@ export const UserManagement: React.FC = () => {
                       <Badge variant={user.role === 'admin' ? 'default' : 'secondary'} className="text-[10px]">
                         {user.role === 'admin' ? 'Admin' : 'Bruger'}
                       </Badge>
+                      {user.is_banned && (
+                        <Badge variant="destructive" className="text-[10px]">
+                          Spærret
+                        </Badge>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
