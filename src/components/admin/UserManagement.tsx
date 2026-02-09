@@ -399,6 +399,28 @@ export const UserManagement: React.FC = () => {
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
+                      {user.role !== 'admin' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={`h-8 w-8 ${user.is_banned ? 'text-green-600 hover:text-green-600' : 'text-amber-600 hover:text-amber-600'}`}
+                          onClick={async () => {
+                            const action = user.is_banned ? 'unban-user' : 'ban-user';
+                            const { data, error } = await supabase.functions.invoke('admin-manage-user', {
+                              body: { action, userId: user.user_id },
+                            });
+                            if (error || data?.error) {
+                              toast.error(data?.error || error?.message || 'Handling fejlede');
+                            } else {
+                              toast.success(user.is_banned ? 'Bruger aktiveret' : 'Bruger spærret');
+                              fetchUsers();
+                            }
+                          }}
+                          title={user.is_banned ? 'Aktiver bruger' : 'Spær bruger'}
+                        >
+                          {user.is_banned ? <ShieldCheck className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+                        </Button>
+                      )}
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" title="Slet bruger">
