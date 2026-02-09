@@ -1,9 +1,4 @@
 import React, { useState, useCallback } from 'react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 
 interface Bead {
   row: number;
