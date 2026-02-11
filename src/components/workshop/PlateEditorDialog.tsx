@@ -159,7 +159,7 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-[98vw] max-h-[95vh] w-auto" hideCloseButton>
+      <DialogContent className="max-w-[98vw] max-h-[98vh] w-auto" hideCloseButton>
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
@@ -194,7 +194,7 @@ export const PlateEditorDialog: React.FC<PlateEditorDialogProps> = ({
 
         <div className="flex flex-row gap-4 overflow-hidden">
           {/* Grid area */}
-          <ScrollArea className="flex-1 max-h-[70vh]">
+          <ScrollArea className="flex-1 max-h-[82vh]">
             <div className="p-4 pr-6">
               <InteractiveBeadGrid
                 beads={beads}
