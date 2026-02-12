@@ -58,7 +58,7 @@ export const PatternFullPreview: React.FC<PatternFullPreviewProps> = ({
       const totalCols = info.plate_width * info.plate_dimension;
       const totalRows = info.plate_height * info.plate_dimension;
       const beadSize = containerWidth / totalCols;
-      const canvasWidth = containerWidth;
+      const canvasWidth = totalCols * beadSize;
       const canvasHeight = totalRows * beadSize;
 
       // Use devicePixelRatio for sharpness
@@ -242,13 +242,13 @@ export const PatternFullPreview: React.FC<PatternFullPreviewProps> = ({
           </div>
         </DialogHeader>
 
-        <div ref={containerRef} className="flex-1 overflow-auto p-4">
+        <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden p-4 w-full">
           {isLoading ? (
             <div className="flex items-center justify-center h-64">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : (
-            <canvas ref={canvasRef} className="mx-auto block" />
+            <canvas ref={canvasRef} className="block w-full" />
           )}
         </div>
       </DialogContent>
