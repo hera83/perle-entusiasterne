@@ -17,7 +17,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { ArrowLeft, Save, Loader2, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Eye, EyeOff, ZoomIn } from 'lucide-react';
+import { PatternFullPreview } from '@/components/gallery/PatternFullPreview';
 import { Json } from '@/integrations/supabase/types';
 
 interface Bead {
