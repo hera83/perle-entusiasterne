@@ -638,6 +638,16 @@ export const PatternEditor: React.FC = () => {
             </Button>
 
             <Button
+              variant="outline"
+              onClick={() => setPreviewOpen(true)}
+              disabled={hasUnsavedChanges}
+              title={hasUnsavedChanges ? 'Gem først for at se preview' : 'Fuld preview'}
+            >
+              <ZoomIn className="h-4 w-4 mr-2" />
+              Preview
+            </Button>
+
+            <Button
               onClick={handleSaveAll}
               disabled={isSaving || !hasUnsavedChanges}
             >
