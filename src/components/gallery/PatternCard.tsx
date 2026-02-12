@@ -526,6 +526,13 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PatternFullPreview
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        patternId={pattern.id}
+        patternTitle={pattern.title}
+      />
     </>
   );
 };

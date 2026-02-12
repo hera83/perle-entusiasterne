@@ -722,6 +722,15 @@ export const PatternEditor: React.FC = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {patternId && (
+          <PatternFullPreview
+            open={previewOpen}
+            onOpenChange={setPreviewOpen}
+            patternId={patternId}
+            patternTitle={pattern.title}
+          />
+        )}
       </div>
     </Layout>
   );
