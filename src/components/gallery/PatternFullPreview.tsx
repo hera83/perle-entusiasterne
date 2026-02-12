@@ -113,11 +113,14 @@ export const PatternFullPreview: React.FC<PatternFullPreviewProps> = ({
             ctx.lineWidth = 0.5;
             ctx.stroke();
           } else {
-            // Empty bead
+            // Empty position - subtle dashed outline only
             ctx.beginPath();
             ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-            ctx.fillStyle = '#e6e6e6';
-            ctx.fill();
+            ctx.strokeStyle = 'rgba(200, 200, 200, 0.3)';
+            ctx.lineWidth = 0.5;
+            ctx.setLineDash([2, 2]);
+            ctx.stroke();
+            ctx.setLineDash([]);
           }
         }
       }
