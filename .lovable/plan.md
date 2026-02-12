@@ -1,74 +1,43 @@
 
 
-# Fuld-opskrift Preview - Stort skarpt billede af hele monsteret
+# Tydelig forskel mellem tomme og hvide perler
 
-## Oversigt
+## Problem
+Tomme pladefelter (ingen perle) og hvide perler ligner hinanden for meget i full preview, fordi tomme felter tegnes som lysegra cirkler (`#e6e6e6`) som ligner hvide perler (`#ffffff`).
 
-En ny "Preview"-knap og popup der viser hele opskriften som et stort, skarpt billede genereret dynamisk fra perledataen. Billedet viser perler med deres rigtige farver (uden farvekoder i midten), med lette skillelinjer mellem pladerne.
+## Losning
+Tegn slet ikke en fyldt cirkel for tomme felter. I stedet vises kun en meget svag stiplet cirkelomrids, sa man kan se at der er en position, men det er tydeligt at den er tom. Hvide perler forbliver som solide hvide cirkler med kant.
 
-## Hvad din kone vil opleve
+### Visuel forskel
+- **Hvid perle**: Solid hvid cirkel med tynd gra kant (som nu)
+- **Tom position**: Ingen fyldt cirkel, kun en meget svag stiplet cirkelomrids (`rgba(200, 200, 200, 0.3)`)
 
-- I galleriet: En ny oje-ikon-knap ved siden af "Aben opskrift" som aabner et stort preview
-- I editoren: En ny oje-ikon-knap til venstre for "Gem alt" som kun er aktiv naar alt er gemt
-- Popuppen: Fyldt med et skarpt, farverigt billede af hele opskriften der fylder bredden, med scrollbar for hoeje moenstre
+## Teknisk aendring
 
-## Teknisk implementering
+### Fil: `src/components/gallery/PatternFullPreview.tsx`
 
-### 1. Ny komponent: `src/components/gallery/PatternFullPreview.tsx`
+AEndre tegnelogikken for tomme felter (ca. linje 115-120):
 
-En dialog-komponent der:
-- Modtager `patternId` (eller pattern-data direkte) og aabner en popup
-- Henter alle plader og farver fra databasen
-- Tegner hele monsteret paa et HTML Canvas element:
-  - Perler som fyldte cirkler med deres rigtige farver (INGEN farvekoder/tal i midten)
-  - Tynd graa kant paa hver perle for at give dybde
-  - Lette skillelinjer (lysegraa) mellem pladerne, ligesom i PDF'en
-  - Skarpe farver (ingen graatoning)
-- Canvas fylder dialogens fulde bredde med en lille margin
-- Vertikal scroll hvis monsteret er hojere end viewporten
-
-**Smart tilfoejelse**: En "Download som billede"-knap i popuppen der gemmer canvas'et som PNG-fil. Saa kan din kone nemt dele billedet eller bruge det som reference paa telefonen uden at aabne en PDF.
-
-### 2. AEndring: `src/components/gallery/PatternCard.tsx`
-
-- Tilfoej ny knap (Image/ZoomIn ikon) ved siden af Eye-knappen (linje 383-385)
-- Knappen aabner PatternFullPreview med pattern.id
-
-### 3. AEndring: `src/components/workshop/PatternEditor.tsx`
-
-- Tilfoej ny knap til venstre for "Gem alt" (omkring linje 638)
-- Knappen er `disabled={hasUnsavedChanges}` saa den kun virker naar alt er gemt
-- Aabner PatternFullPreview med patternId
-
-### Canvas-tegnelogik (kernen)
-
-```text
-1. Hent alle plader og farver fra databasen
-2. Byg et komplet grid (totalRows x totalCols)
-3. Beregn beadSize saa bredden fylder containeren (containerWidth / totalCols)
-4. For hver perle:
-   - Tegn fyldt cirkel med perlens farve
-   - Tegn tynd graa kant (strokeStyle = #ccc, lineWidth = 0.5)
-   - Tomme felter: lys graa cirkel
-5. Tegn skillelinjer mellem plader:
-   - Lodret linje for hver plate_width graense
-   - Vandret linje for hver plate_height graense
-   - Farve: rgba(150, 150, 150, 0.4) - synlig men ikke dominerende
-6. Canvas hoejde beregnes automatisk ud fra aspect ratio
+**Fra:**
+```typescript
+// Empty bead
+ctx.beginPath();
+ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+ctx.fillStyle = '#e6e6e6';
+ctx.fill();
 ```
 
-### Dialog-opsaetning
+**Til:**
+```typescript
+// Empty position - subtle dashed outline only
+ctx.beginPath();
+ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+ctx.strokeStyle = 'rgba(200, 200, 200, 0.3)';
+ctx.lineWidth = 0.5;
+ctx.setLineDash([2, 2]);
+ctx.stroke();
+ctx.setLineDash([]);
+```
 
-- Samme storrelse som PatternDialog: `max-w-[95vw] max-h-[95vh]`
-- Header med titel + "Download PNG" knap + "Luk" knap
-- Body: Kun canvas-billedet i en scrollbar container
-- Canvas bredde: 95% af dialogens bredde
-- Canvas hoejde: beregnet fra aspect ratio (kan vaere hojere end viewporten = scroll)
+Dette giver en klar visuel forskel: hvide perler er solide cirkler, tomme positioner er naesten usynlige stiplede omrids.
 
-### Filer der oprettes/aendres
-
-| Fil | AEndring |
-|-----|---------|
-| `src/components/gallery/PatternFullPreview.tsx` | **NY** - Preview dialog med canvas-rendering |
-| `src/components/gallery/PatternCard.tsx` | Tilfoej preview-knap i footer |
-| `src/components/workshop/PatternEditor.tsx` | Tilfoej preview-knap ved "Gem alt" |
