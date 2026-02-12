@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { da } from 'date-fns/locale';
 import { PatternPreview } from './PatternPreview';
+import { PatternFullPreview } from './PatternFullPreview';
 import {
   AlertDialog,
   AlertDialogAction,
