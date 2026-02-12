@@ -385,6 +385,9 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
             <Button size="sm" onClick={onOpen} className="h-7 w-7 p-0" title="Åben opskrift">
               <Eye className="h-3.5 w-3.5" />
             </Button>
+            <Button size="sm" variant="outline" onClick={() => setPreviewOpen(true)} className="h-7 w-7 p-0" title="Fuld preview">
+              <ZoomIn className="h-3.5 w-3.5" />
+            </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Nulstil progress">
