@@ -17,7 +17,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { ArrowLeft, Save, Loader2, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Eye, EyeOff, ZoomIn } from 'lucide-react';
+import { PatternFullPreview } from '@/components/gallery/PatternFullPreview';
 import { Json } from '@/integrations/supabase/types';
 
 interface Bead {
@@ -89,6 +90,7 @@ export const PatternEditor: React.FC = () => {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [exitDestination, setExitDestination] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   // Plate editor state
   const [editingPlate, setEditingPlate] = useState<{
@@ -636,6 +638,16 @@ export const PatternEditor: React.FC = () => {
             </Button>
 
             <Button
+              variant="outline"
+              onClick={() => setPreviewOpen(true)}
+              disabled={hasUnsavedChanges}
+              title={hasUnsavedChanges ? 'Gem først for at se preview' : 'Fuld preview'}
+            >
+              <ZoomIn className="h-4 w-4 mr-2" />
+              Preview
+            </Button>
+
+            <Button
               onClick={handleSaveAll}
               disabled={isSaving || !hasUnsavedChanges}
             >
@@ -710,6 +722,15 @@ export const PatternEditor: React.FC = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {patternId && (
+          <PatternFullPreview
+            open={previewOpen}
+            onOpenChange={setPreviewOpen}
+            patternId={patternId}
+            patternTitle={pattern.title}
+          />
+        )}
       </div>
     </Layout>
   );
