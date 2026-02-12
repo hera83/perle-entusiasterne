@@ -90,6 +90,7 @@ export const PatternEditor: React.FC = () => {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [exitDestination, setExitDestination] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   // Plate editor state
   const [editingPlate, setEditingPlate] = useState<{
