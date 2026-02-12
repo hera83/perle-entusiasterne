@@ -144,13 +144,18 @@ export const PatternFullPreview: React.FC<PatternFullPreviewProps> = ({
     []
   );
 
+  const [loadedData, setLoadedData] = useState<{
+    plates: PlateData[];
+    colorMap: Map<string, ColorInfo>;
+    info: { plate_width: number; plate_height: number; plate_dimension: number };
+  } | null>(null);
+
   useEffect(() => {
     if (!open || !patternId) return;
 
-    const loadAndDraw = async () => {
+    const loadData = async () => {
       setIsLoading(true);
       try {
-        // Fetch pattern info
         const { data: patData } = await supabase
           .from('bead_patterns')
           .select('plate_width, plate_height, plate_dimension, title')
@@ -160,7 +165,6 @@ export const PatternFullPreview: React.FC<PatternFullPreviewProps> = ({
         if (!patData) return;
         setPatternInfo(patData);
 
-        // Fetch plates and colors in parallel
         const [platesRes, colorsRes] = await Promise.all([
           supabase
             .from('bead_plates')
@@ -181,13 +185,7 @@ export const PatternFullPreview: React.FC<PatternFullPreviewProps> = ({
           (colorsRes.data || []).map((c) => [c.id, c])
         );
 
-        // Wait for next frame so container is measured
-        requestAnimationFrame(() => {
-          const container = containerRef.current;
-          if (!container) return;
-          const containerWidth = container.clientWidth;
-          drawCanvas(plates, colorMap, patData, containerWidth);
-        });
+        setLoadedData({ plates, colorMap, info: patData });
       } catch (err) {
         console.error('Error loading preview:', err);
       } finally {
@@ -195,8 +193,26 @@ export const PatternFullPreview: React.FC<PatternFullPreviewProps> = ({
       }
     };
 
-    loadAndDraw();
-  }, [open, patternId, drawCanvas]);
+    loadData();
+  }, [open, patternId]);
+
+  // Redraw on resize (handles scrollbar appearing/disappearing)
+  useEffect(() => {
+    if (!loadedData || !open) return;
+
+    const redraw = () => {
+      const container = containerRef.current;
+      if (!container) return;
+      drawCanvas(loadedData.plates, loadedData.colorMap, loadedData.info, container.clientWidth);
+    };
+
+    // Initial draw
+    requestAnimationFrame(redraw);
+
+    const observer = new ResizeObserver(redraw);
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [loadedData, open, drawCanvas]);
 
   const handleDownloadPng = () => {
     const canvas = canvasRef.current;
