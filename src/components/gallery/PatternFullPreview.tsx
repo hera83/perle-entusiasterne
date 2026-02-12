@@ -58,7 +58,7 @@ export const PatternFullPreview: React.FC<PatternFullPreviewProps> = ({
       const totalCols = info.plate_width * info.plate_dimension;
       const totalRows = info.plate_height * info.plate_dimension;
       const beadSize = containerWidth / totalCols;
-      const canvasWidth = containerWidth;
+      const canvasWidth = totalCols * beadSize;
       const canvasHeight = totalRows * beadSize;
 
       // Use devicePixelRatio for sharpness
