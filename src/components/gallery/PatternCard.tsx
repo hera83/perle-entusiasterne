@@ -84,6 +84,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [isSavingMeta, setIsSavingMeta] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const canManage = isAdmin || (user && user.id === pattern.user_id);
   const canDelete = isAdmin;
