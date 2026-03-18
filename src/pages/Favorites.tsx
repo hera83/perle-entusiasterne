@@ -3,7 +3,7 @@ import { Layout } from '@/components/layout/Layout';
 import { PatternCard } from '@/components/gallery/PatternCard';
 import { PatternDialog } from '@/components/gallery/PatternDialog';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { Loader2, Heart } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 
