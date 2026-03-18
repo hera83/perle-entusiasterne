@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Download, Loader2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 
 interface PatternFullPreviewProps {
   open: boolean;
@@ -159,7 +159,7 @@ export const PatternFullPreview: React.FC<PatternFullPreviewProps> = ({
     const loadData = async () => {
       setIsLoading(true);
       try {
-        const { data: patData } = await supabase
+        const { data: patData } = await db
           .from('bead_patterns')
           .select('plate_width, plate_height, plate_dimension, title')
           .eq('id', patternId)
@@ -169,13 +169,13 @@ export const PatternFullPreview: React.FC<PatternFullPreviewProps> = ({
         setPatternInfo(patData);
 
         const [platesRes, colorsRes] = await Promise.all([
-          supabase
+          db
             .from('bead_plates')
             .select('beads, row_index, column_index')
             .eq('pattern_id', patternId)
             .order('row_index')
             .order('column_index'),
-          supabase.from('bead_colors').select('id, hex_color, name, code'),
+          db.from('bead_colors').select('id, hex_color, name, code'),
         ]);
 
         const plates: PlateData[] = (platesRes.data || []).map((p) => ({

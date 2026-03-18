@@ -3,7 +3,7 @@ import { Layout } from '@/components/layout/Layout';
 import { PatternCard } from '@/components/gallery/PatternCard';
 import { PatternDialog } from '@/components/gallery/PatternDialog';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { Loader2, Heart } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 
@@ -41,7 +41,7 @@ export const Favorites: React.FC = () => {
 
     setLoading(true);
     try {
-      const { data: favorites, error: favError } = await supabase
+      const { data: favorites, error: favError } = await db
         .from('user_favorites')
         .select('pattern_id')
         .eq('user_id', user.id);
@@ -54,7 +54,7 @@ export const Favorites: React.FC = () => {
 
       const patternIds = favorites.map(f => f.pattern_id);
 
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('bead_patterns')
         .select(`
           id,

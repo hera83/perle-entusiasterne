@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,7 +24,7 @@ export const Announcements: React.FC = () => {
 
   useEffect(() => {
     const fetchAnnouncements = async () => {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('announcements')
         .select('id, title, content')
         .eq('is_active', true)

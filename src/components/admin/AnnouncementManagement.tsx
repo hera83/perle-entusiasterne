@@ -34,7 +34,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { toast } from 'sonner';
 import { Loader2, Plus, Pencil, Trash2, MessageSquare } from 'lucide-react';
 import { format } from 'date-fns';
@@ -70,7 +70,7 @@ export const AnnouncementManagement: React.FC = () => {
 
   const fetchAnnouncements = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('announcements')
         .select('*')
         .order('created_at', { ascending: false });
@@ -102,7 +102,7 @@ export const AnnouncementManagement: React.FC = () => {
       };
 
       if (editingAnnouncement) {
-        const { error } = await supabase
+        const { error } = await db
           .from('announcements')
           .update(announcementData)
           .eq('id', editingAnnouncement.id);
@@ -110,7 +110,7 @@ export const AnnouncementManagement: React.FC = () => {
         if (error) throw error;
         toast.success('Besked opdateret');
       } else {
-        const { error } = await supabase
+        const { error } = await db
           .from('announcements')
           .insert(announcementData);
 
@@ -141,7 +141,7 @@ export const AnnouncementManagement: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('announcements')
         .delete()
         .eq('id', id);

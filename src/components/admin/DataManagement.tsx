@@ -12,7 +12,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { toast } from 'sonner';
 import { Download, Upload, Trash2, AlertTriangle, Loader2 } from 'lucide-react';
 
@@ -24,10 +24,10 @@ export const DataManagement: React.FC = () => {
     setExporting(true);
     try {
       // Fetch all data
-      const { data: patterns } = await supabase.from('bead_patterns').select('*');
-      const { data: plates } = await supabase.from('bead_plates').select('*');
-      const { data: colors } = await supabase.from('bead_colors').select('*');
-      const { data: categories } = await supabase.from('categories').select('*');
+      const { data: patterns } = await db.from('bead_patterns').select('*');
+      const { data: plates } = await db.from('bead_plates').select('*');
+      const { data: colors } = await db.from('bead_colors').select('*');
+      const { data: categories } = await db.from('categories').select('*');
 
       const exportData = {
         exportedAt: new Date().toISOString(),
@@ -76,7 +76,7 @@ export const DataManagement: React.FC = () => {
       // Import colors first
       if (importData.data.colors?.length) {
         for (const color of importData.data.colors) {
-          await supabase
+          await db
             .from('bead_colors')
             .upsert(color, { onConflict: 'code' });
         }
@@ -85,7 +85,7 @@ export const DataManagement: React.FC = () => {
       // Import categories
       if (importData.data.categories?.length) {
         for (const category of importData.data.categories) {
-          await supabase
+          await db
             .from('categories')
             .upsert(category, { onConflict: 'name' });
         }
@@ -105,12 +105,12 @@ export const DataManagement: React.FC = () => {
     setResetting(true);
     try {
       // Delete all user data in order
-      await supabase.from('user_progress').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('user_favorites').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('bead_plates').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('bead_patterns').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('announcements').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('categories').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await db.from('user_progress').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await db.from('user_favorites').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await db.from('bead_plates').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await db.from('bead_patterns').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await db.from('announcements').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await db.from('categories').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
       toast.success('Alt data er nulstillet');
     } catch (err) {

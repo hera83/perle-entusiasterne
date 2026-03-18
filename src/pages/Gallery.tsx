@@ -4,7 +4,7 @@ import { SearchBar } from '@/components/gallery/SearchBar';
 import { PatternCard } from '@/components/gallery/PatternCard';
 import { PatternDialog } from '@/components/gallery/PatternDialog';
 import { CategoryFilter } from '@/components/gallery/CategoryFilter';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -45,7 +45,7 @@ export const Gallery: React.FC = () => {
   const fetchPatterns = useCallback(async (query?: string, categoryId?: string | null, page: number = 1) => {
     setLoading(true);
     try {
-      let request = supabase
+      let request = db
         .from('bead_patterns')
         .select(`
           id,

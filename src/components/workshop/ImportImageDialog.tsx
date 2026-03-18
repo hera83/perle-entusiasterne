@@ -28,7 +28,7 @@ import {
 import { Check, ChevronsUpDown, Loader2, Upload, Crop, Settings, Eye, ArrowLeft, ArrowRight } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -132,7 +132,7 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
   const fetchCategories = async () => {
     setIsFetchingCategories(true);
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('categories')
         .select('id, name')
         .order('name');
@@ -147,7 +147,7 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
 
   const fetchColors = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('bead_colors')
         .select('id, hex_color, name, code')
         .eq('is_active', true)
@@ -412,7 +412,7 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
         if (existing) {
           categoryId = existing.id;
         } else {
-          const { data: newCat, error: catErr } = await supabase
+          const { data: newCat, error: catErr } = await db
             .from('categories')
             .insert({ name: categorySearch.trim() })
             .select('id')
@@ -428,7 +428,7 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
       const thumbnail = generateThumbnailFromBeads(previewBeads, targetWidth, targetHeight, beadColors);
 
       // Create pattern
-      const { data: pattern, error: patternError } = await supabase
+      const { data: pattern, error: patternError } = await db
         .from('bead_patterns')
         .insert({
           title: title.trim(),
@@ -462,7 +462,7 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
         }
       }
 
-      const { error: platesError } = await supabase
+      const { error: platesError } = await db
         .from('bead_plates')
         .insert(platesToInsert);
 

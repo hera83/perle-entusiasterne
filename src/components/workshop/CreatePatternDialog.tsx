@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/popover';
 import { Check, ChevronsUpDown, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 
@@ -71,7 +71,7 @@ export const CreatePatternDialog: React.FC<CreatePatternDialogProps> = ({
   const fetchCategories = async () => {
     setIsFetchingCategories(true);
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('categories')
         .select('id, name')
         .order('name');
@@ -118,7 +118,7 @@ export const CreatePatternDialog: React.FC<CreatePatternDialogProps> = ({
           categoryId = existingCategory.id;
         } else {
           // Create new category
-          const { data: newCategory, error: categoryError } = await supabase
+          const { data: newCategory, error: categoryError } = await db
             .from('categories')
             .insert({ name: categorySearch.trim() })
             .select('id')
@@ -130,7 +130,7 @@ export const CreatePatternDialog: React.FC<CreatePatternDialogProps> = ({
       }
 
       // Create the pattern
-      const { data: pattern, error: patternError } = await supabase
+      const { data: pattern, error: patternError } = await db
         .from('bead_patterns')
         .insert({
           title: title.trim(),
@@ -160,7 +160,7 @@ export const CreatePatternDialog: React.FC<CreatePatternDialogProps> = ({
         }
       }
 
-      const { error: platesError } = await supabase
+      const { error: platesError } = await db
         .from('bead_plates')
         .insert(plates);
 

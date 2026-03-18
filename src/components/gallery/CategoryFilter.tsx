@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -22,7 +22,7 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({
 
   useEffect(() => {
     const fetchCategories = async () => {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('categories')
         .select('id, name, bead_patterns(count)')
         .order('name');

@@ -8,7 +8,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { useAuth } from '@/contexts/AuthContext';
 import { BeadPlateView } from './BeadPlateView';
 import { PatternPreview } from './PatternPreview';
@@ -95,7 +95,7 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
     let savedPosition: PlatePosition | null = null;
 
     if (user) {
-      const { data } = await supabase
+      const { data } = await db
         .from('user_progress')
         .select('completed_plates, current_row, current_plate')
         .eq('user_id', user.id)
@@ -145,7 +145,7 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
   };
 
   const loadColors = async () => {
-    const { data } = await supabase
+    const { data } = await db
       .from('bead_colors')
       .select('id, hex_color, name, code');
 
@@ -159,7 +159,7 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
   const loadPlateData = async () => {
     if (!pattern) return;
 
-    const { data } = await supabase
+    const { data } = await db
       .from('bead_plates')
       .select('beads')
       .eq('pattern_id', pattern.id)
@@ -174,7 +174,7 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
     if (!pattern) return { error: null };
 
     if (user) {
-      const { error } = await supabase
+      const { error } = await db
         .from('user_progress')
         .upsert({
           user_id: user.id,

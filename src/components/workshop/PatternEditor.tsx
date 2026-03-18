@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { useAuth } from '@/contexts/AuthContext';
 import { PatternGridOverview } from './PatternGridOverview';
 import { PlateEditorDialog } from './PlateEditorDialog';
@@ -106,7 +106,7 @@ export const PatternEditor: React.FC = () => {
       setIsLoading(true);
       try {
         // Fetch pattern
-        const { data: patternData, error: patternError } = await supabase
+        const { data: patternData, error: patternError } = await db
           .from('bead_patterns')
           .select('id, title, is_public, plate_width, plate_height, plate_dimension, category_id')
           .eq('id', patternId)
@@ -126,7 +126,7 @@ export const PatternEditor: React.FC = () => {
         setPattern(patternData);
 
         // Fetch plates
-        const { data: platesData, error: platesError } = await supabase
+        const { data: platesData, error: platesError } = await db
           .from('bead_plates')
           .select('id, row_index, column_index, beads')
           .eq('pattern_id', patternId)
@@ -146,7 +146,7 @@ export const PatternEditor: React.FC = () => {
         setPlates(parsedPlates);
 
         // Fetch colors
-        const { data: colorsData, error: colorsError } = await supabase
+        const { data: colorsData, error: colorsError } = await db
           .from('bead_colors')
           .select('id, hex_color, name, code')
           .order('code');
@@ -243,7 +243,7 @@ export const PatternEditor: React.FC = () => {
         });
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('bead_plates')
         .insert(newPlates)
         .select('id, row_index, column_index, beads');
@@ -251,7 +251,7 @@ export const PatternEditor: React.FC = () => {
       if (error) throw error;
 
       // Update pattern dimensions
-      const { error: updateError } = await supabase
+      const { error: updateError } = await db
         .from('bead_patterns')
         .update({ plate_height: pattern.plate_height + 1 })
         .eq('id', patternId);
@@ -285,7 +285,7 @@ export const PatternEditor: React.FC = () => {
 
     try {
       // Delete plates in the last row
-      const { error: deleteError } = await supabase
+      const { error: deleteError } = await db
         .from('bead_plates')
         .delete()
         .eq('pattern_id', patternId)
@@ -294,7 +294,7 @@ export const PatternEditor: React.FC = () => {
       if (deleteError) throw deleteError;
 
       // Update pattern dimensions
-      const { error: updateError } = await supabase
+      const { error: updateError } = await db
         .from('bead_patterns')
         .update({ plate_height: pattern.plate_height - 1 })
         .eq('id', patternId);
@@ -331,7 +331,7 @@ export const PatternEditor: React.FC = () => {
         });
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('bead_plates')
         .insert(newPlates)
         .select('id, row_index, column_index, beads');
@@ -339,7 +339,7 @@ export const PatternEditor: React.FC = () => {
       if (error) throw error;
 
       // Update pattern dimensions
-      const { error: updateError } = await supabase
+      const { error: updateError } = await db
         .from('bead_patterns')
         .update({ plate_width: pattern.plate_width + 1 })
         .eq('id', patternId);
@@ -373,7 +373,7 @@ export const PatternEditor: React.FC = () => {
 
     try {
       // Delete plates in the last column
-      const { error: deleteError } = await supabase
+      const { error: deleteError } = await db
         .from('bead_plates')
         .delete()
         .eq('pattern_id', patternId)
@@ -382,7 +382,7 @@ export const PatternEditor: React.FC = () => {
       if (deleteError) throw deleteError;
 
       // Update pattern dimensions
-      const { error: updateError } = await supabase
+      const { error: updateError } = await db
         .from('bead_patterns')
         .update({ plate_width: pattern.plate_width - 1 })
         .eq('id', patternId);
@@ -455,7 +455,7 @@ export const PatternEditor: React.FC = () => {
       // Save directly - no auth check needed
       // Our controlled refresh timer in AuthContext keeps the token valid
       for (const plate of plates) {
-        const { error } = await supabase
+        const { error } = await db
           .from('bead_plates')
           .update({ beads: plate.beads as unknown as Json })
           .eq('id', plate.id);
@@ -476,7 +476,7 @@ export const PatternEditor: React.FC = () => {
       const totalBeads = plates.reduce((sum, plate) => sum + plate.beads.length, 0);
       const thumbnail = generateThumbnail();
 
-      const { error: metaError } = await supabase
+      const { error: metaError } = await db
         .from('bead_patterns')
         .update({ total_beads: totalBeads, thumbnail })
         .eq('id', patternId);
@@ -551,7 +551,7 @@ export const PatternEditor: React.FC = () => {
     if (!pattern || !patternId) return;
 
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('bead_patterns')
         .update({ is_public: !pattern.is_public })
         .eq('id', patternId);

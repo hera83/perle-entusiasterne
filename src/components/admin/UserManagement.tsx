@@ -39,7 +39,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { toast } from 'sonner';
 import { Loader2, UserPlus, Pencil, Trash2, KeyRound, Ban, ShieldCheck } from 'lucide-react';
 import { format } from 'date-fns';
@@ -86,7 +86,7 @@ export const UserManagement: React.FC = () => {
 
   const fetchUsers = async () => {
     try {
-      const { data: profiles, error } = await supabase
+      const { data: profiles, error } = await db
         .from('profiles')
         .select('id, user_id, display_name, created_at, is_banned')
         .eq('is_deleted', false)
@@ -99,7 +99,7 @@ export const UserManagement: React.FC = () => {
 
       // Fetch roles
       const userIds = (profiles || []).map(p => p.user_id);
-      const { data: allRoles } = await supabase
+      const { data: allRoles } = await db
         .from('user_roles')
         .select('user_id, role')
         .in('user_id', userIds);
@@ -111,7 +111,7 @@ export const UserManagement: React.FC = () => {
       // Fetch last_sign_in_at and email from edge function
       let authMap: Record<string, { last_sign_in_at: string | null; email: string | null }> = {};
       try {
-        const { data, error: fnError } = await supabase.functions.invoke('admin-manage-user', {
+        const { data, error: fnError } = await db.functions.invoke('admin-manage-user', {
           body: { action: 'list-users' },
         });
         if (!fnError && data?.users) {
@@ -142,7 +142,7 @@ export const UserManagement: React.FC = () => {
     setFormLoading(true);
 
     try {
-      const response = await supabase.functions.invoke('create-user', {
+      const response = await db.functions.invoke('create-user', {
         body: { email: createEmail, password: createPassword, displayName: createDisplayName, role: createRole },
       });
 
@@ -182,7 +182,7 @@ export const UserManagement: React.FC = () => {
     setEditLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('admin-manage-user', {
+      const { data, error } = await db.functions.invoke('admin-manage-user', {
         body: {
           action: 'update-user',
           userId: editingUser.user_id,
@@ -213,7 +213,7 @@ export const UserManagement: React.FC = () => {
     setResetLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('admin-manage-user', {
+      const { data, error } = await db.functions.invoke('admin-manage-user', {
         body: {
           action: 'reset-password',
           userId: editingUser.user_id,
@@ -238,7 +238,7 @@ export const UserManagement: React.FC = () => {
 
   const handleDeleteUser = async (userId: string) => {
     try {
-      const { data, error } = await supabase.functions.invoke('admin-manage-user', {
+      const { data, error } = await db.functions.invoke('admin-manage-user', {
         body: { action: 'delete-user', userId },
       });
 
@@ -407,7 +407,7 @@ export const UserManagement: React.FC = () => {
                           className={`h-8 w-8 ${user.is_banned ? 'text-green-600 hover:text-green-600' : 'text-amber-600 hover:text-amber-600'}`}
                           onClick={async () => {
                             const action = user.is_banned ? 'unban-user' : 'ban-user';
-                            const { data, error } = await supabase.functions.invoke('admin-manage-user', {
+                            const { data, error } = await db.functions.invoke('admin-manage-user', {
                               body: { action, userId: user.user_id },
                             });
                             if (error || data?.error) {

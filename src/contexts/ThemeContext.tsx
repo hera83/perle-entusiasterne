@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { useAuth } from './AuthContext';
 
 type Theme = 'light' | 'dark' | 'system';
@@ -45,7 +45,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (user) {
       const loadUserTheme = async () => {
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from('profiles')
           .select('theme_preference')
           .eq('user_id', user.id)
@@ -93,7 +93,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Save to database if logged in
     if (user) {
-      await supabase
+      await db
         .from('profiles')
         .update({ theme_preference: newTheme })
         .eq('user_id', user.id);
