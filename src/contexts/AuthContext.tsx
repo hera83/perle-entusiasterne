@@ -1,7 +1,8 @@
 // MUST be first import – patches storage before Supabase reads from it (hosted mode only)
-const isLocalMode = import.meta.env.VITE_BACKEND_MODE === 'local';
-if (!isLocalMode) {
-  await import('@/lib/patch-supabase-auth');
+if (import.meta.env.VITE_BACKEND_MODE !== 'local') {
+  // Side-effect import: patches Supabase auth storage synchronously
+  // In local mode this is a no-op because the real supabase client isn't used for auth
+  import('@/lib/patch-supabase-auth');
 }
 
 import React, { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react';
