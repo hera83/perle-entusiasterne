@@ -223,8 +223,21 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
       }
 
       const url = `${window.location.origin}/opskrift/${response.data.share_token}`;
-      await navigator.clipboard.writeText(url);
-      toast.success('Link kopieret til udklipsholder');
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        toast.success('Link kopieret til udklipsholder');
+      } else {
+        // Fallback for non-secure contexts (e.g. HTTP)
+        const textArea = document.createElement('textarea');
+        textArea.value = url;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        toast.success('Link kopieret til udklipsholder');
+      }
     } catch (err) {
       console.error('Error sharing link:', err);
       toast.error('Kunne ikke kopiere linket');
