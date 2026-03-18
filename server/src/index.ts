@@ -462,7 +462,7 @@ function parseOrExpression(expr: string, startIdx: number): { clause: string; va
 
 // ─── RPC Endpoints ──────────────────────────────────────────────────────────
 
-app.post('/api/rpc/:name', optionalAuth, async (req, res) => {
+app.post('/api/rpc/:name', authMiddleware, async (req: AuthRequest, res) => {
   const { name } = req.params;
   const userId = (req as any).userId;
 
