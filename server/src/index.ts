@@ -618,7 +618,7 @@ app.post('/api/functions/admin-manage-user', authMiddleware, requireAuth, async 
   }
 });
 
-app.post('/api/functions/create-user', authenticate, async (req, res) => {
+app.post('/api/functions/create-user', authMiddleware, requireAuth, async (req: AuthRequest, res) => {
   const callerId = (req as any).userId;
 
   // Verify admin
