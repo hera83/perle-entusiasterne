@@ -9,6 +9,7 @@ import React, { createContext, useContext, useEffect, useState, useRef, useMemo,
 import { User, Session } from '@supabase/supabase-js';
 import { db } from '@/services/db';
 
+const isLocalMode = import.meta.env.VITE_BACKEND_MODE === 'local';
 const REFRESH_INTERVAL_MS = 55 * 60 * 1000; // 55 minutes - safe for 60-minute tokens
 
 interface AuthContextType {
