@@ -397,9 +397,10 @@ async function handleDelete(table: string, filters: any[]) {
 
 // ─── Where Clause Builder ───────────────────────────────────────────────────
 
-function buildWhere(filters: any[], startIdx = 1): { whereClause: string; values: any[] } {
+function buildWhere(filters: any[], startIdx = 1, qualifyTable?: string): { whereClause: string; values: any[] } {
   if (!filters || filters.length === 0) return { whereClause: '', values: [] };
 
+  const q = (col: string) => qualifyTable ? `${qualifyTable}.${col}` : col;
   const parts: string[] = [];
   const values: any[] = [];
   let paramIdx = startIdx;
@@ -407,35 +408,34 @@ function buildWhere(filters: any[], startIdx = 1): { whereClause: string; values
   for (const f of filters) {
     switch (f.type) {
       case 'eq':
-        parts.push(`${f.column} = $${paramIdx++}`);
+        parts.push(`${q(f.column)} = $${paramIdx++}`);
         values.push(f.value);
         break;
       case 'neq':
-        parts.push(`${f.column} != $${paramIdx++}`);
+        parts.push(`${q(f.column)} != $${paramIdx++}`);
         values.push(f.value);
         break;
       case 'in':
         if (Array.isArray(f.value) && f.value.length > 0) {
           const placeholders = f.value.map(() => `$${paramIdx++}`).join(', ');
-          parts.push(`${f.column} IN (${placeholders})`);
+          parts.push(`${q(f.column)} IN (${placeholders})`);
           values.push(...f.value);
         }
         break;
       case 'ilike':
-        parts.push(`${f.column} ILIKE $${paramIdx++}`);
+        parts.push(`${q(f.column)} ILIKE $${paramIdx++}`);
         values.push(f.value);
         break;
       case 'gte':
-        parts.push(`${f.column} >= $${paramIdx++}`);
+        parts.push(`${q(f.column)} >= $${paramIdx++}`);
         values.push(f.value);
         break;
       case 'lte':
-        parts.push(`${f.column} <= $${paramIdx++}`);
+        parts.push(`${q(f.column)} <= $${paramIdx++}`);
         values.push(f.value);
         break;
       case 'or': {
-        // Parse simple Supabase OR expressions like "is_public.eq.true,user_id.eq.xxx"
-        const orParts = parseOrExpression(f.value, paramIdx);
+        const orParts = parseOrExpression(f.value, paramIdx, qualifyTable);
         if (orParts.clause) {
           parts.push(`(${orParts.clause})`);
           values.push(...orParts.values);
