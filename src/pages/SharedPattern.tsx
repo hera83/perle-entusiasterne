@@ -77,7 +77,7 @@ const SharedPattern: React.FC = () => {
       let response: Response;
 
       if (isLocalMode) {
-        const apiUrl = import.meta.env.VITE_LOCAL_API_URL || 'http://localhost:3001';
+        const apiUrl = import.meta.env.VITE_LOCAL_API_URL || '';
         response = await fetch(
           `${apiUrl}/api/functions/get-shared-pattern?share_token=${shareToken}`,
           { headers: { 'Content-Type': 'application/json' } }
