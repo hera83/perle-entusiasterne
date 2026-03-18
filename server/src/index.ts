@@ -88,7 +88,7 @@ app.post('/api/auth/signin', async (req, res) => {
 
 // ─── Generic Query Handler ──────────────────────────────────────────────────
 
-app.post('/api/query', optionalAuth, async (req, res) => {
+app.post('/api/query', authMiddleware, async (req: AuthRequest, res) => {
   const { table, operation, select, returnSelect, filters, order, range, body, upsertOptions, single, maybeSingle, count, head } = req.body;
   const userId = (req as any).userId;
 
