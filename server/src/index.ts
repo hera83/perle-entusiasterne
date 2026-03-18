@@ -148,7 +148,7 @@ async function handleSelect(
     sql += ` LEFT JOIN ${join.table} ON ${join.on}`;
   }
 
-  const { whereClause, values } = buildWhere(filters);
+  const { whereClause, values } = buildWhere(filters, 1, joins.length > 0 ? table : undefined);
   if (whereClause) sql += ` WHERE ${whereClause}`;
 
   // Order
