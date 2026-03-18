@@ -644,7 +644,7 @@ app.post('/api/functions/create-user', authMiddleware, requireAuth, async (req: 
     if (deleted.rows.length > 0) {
       // Reactivation
       const hashedPassword = await bcrypt.hash(password, 10);
-      const newUserId = uuid();
+      const newUserId = randomUUID();
       const oldUserId = deleted.rows[0].user_id;
 
       await pool.query(
@@ -671,7 +671,7 @@ app.post('/api/functions/create-user', authMiddleware, requireAuth, async (req: 
     if (existing.rows.length > 0) return res.status(400).json({ error: 'Denne email er allerede i brug' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUserId = uuid();
+    const newUserId = randomUUID();
 
     await pool.query(
       'INSERT INTO auth_users (id, email, encrypted_password, raw_user_meta_data, created_at, updated_at) VALUES ($1, $2, $3, $4, NOW(), NOW())',
@@ -709,7 +709,7 @@ app.post('/api/functions/generate-share-token', authMiddleware, requireAuth, asy
       return res.json({ share_token: pattern.rows[0].share_token });
     }
 
-    const newToken = uuid();
+    const newToken = randomUUID();
     await pool.query('UPDATE bead_patterns SET share_token = $1 WHERE id = $2', [newToken, pattern_id]);
     return res.json({ share_token: newToken });
   } catch (err: any) {
