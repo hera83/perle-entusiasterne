@@ -48,7 +48,7 @@ app.post('/api/auth/signup', async (req, res) => {
       [userId, displayName, email]
     );
 
-    const token = jwt.sign({ sub: userId, email, role: 'authenticated' }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+    const token = jwt.sign({ sub: userId, email, role: 'authenticated' }, JWT_SECRET, { expiresIn: JWT_EXPIRY as any });
     const user = { id: userId, email, user_metadata: { display_name: displayName } };
     const session = { access_token: token, token_type: 'bearer', expires_in: 86400, user };
 
