@@ -6,7 +6,7 @@ import { Progress } from '@/components/ui/progress';
 import { Heart, Eye, RotateCcw, Pencil, Trash2, Calendar, User, Grid3X3, Hash, Lock, Globe, FileDown, Loader2, Settings2, Link2, ZoomIn } from 'lucide-react';
 import { generatePatternPdf } from '@/lib/generatePatternPdf';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { da } from 'date-fns/locale';

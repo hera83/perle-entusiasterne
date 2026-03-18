@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 

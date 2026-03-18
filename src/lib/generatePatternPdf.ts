@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { toast } from 'sonner';
 
 export interface PatternData {

@@ -28,7 +28,7 @@ import {
 import { Check, ChevronsUpDown, Loader2, Upload, Crop, Settings, Eye, ArrowLeft, ArrowRight } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import {

@@ -12,7 +12,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { toast } from 'sonner';
 import { Download, Upload, Trash2, AlertTriangle, Loader2 } from 'lucide-react';
 

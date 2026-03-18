@@ -39,7 +39,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { toast } from 'sonner';
 import { Loader2, UserPlus, Pencil, Trash2, KeyRound, Ban, ShieldCheck } from 'lucide-react';
 import { format } from 'date-fns';

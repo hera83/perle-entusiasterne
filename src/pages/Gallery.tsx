@@ -45,7 +45,7 @@ export const Gallery: React.FC = () => {
   const fetchPatterns = useCallback(async (query?: string, categoryId?: string | null, page: number = 1) => {
     setLoading(true);
     try {
-      let request = supabase
+      let request = db
         .from('bead_patterns')
         .select(`
           id,

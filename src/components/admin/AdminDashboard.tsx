@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { FileText, Users, FolderOpen, PlayCircle, Download } from 'lucide-react';
 
 interface DashboardStats {

@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Download, Loader2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 
 interface PatternFullPreviewProps {
   open: boolean;

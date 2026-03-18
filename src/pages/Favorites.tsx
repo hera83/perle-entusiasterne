@@ -54,7 +54,7 @@ export const Favorites: React.FC = () => {
 
       const patternIds = favorites.map(f => f.pattern_id);
 
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('bead_patterns')
         .select(`
           id,
