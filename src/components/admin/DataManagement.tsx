@@ -73,21 +73,21 @@ export const DataManagement: React.FC = () => {
         return;
       }
 
-      // Import colors first
+      // Import colors first (preserve original IDs)
       if (importData.data.colors?.length) {
         for (const color of importData.data.colors) {
           await db
             .from('bead_colors')
-            .upsert(color, { onConflict: 'code' });
+            .upsert(color, { onConflict: 'id' });
         }
       }
 
-      // Import categories
+      // Import categories (preserve original IDs)
       if (importData.data.categories?.length) {
         for (const category of importData.data.categories) {
           await db
             .from('categories')
-            .upsert(category, { onConflict: 'name' });
+            .upsert(category, { onConflict: 'id' });
         }
       }
 
