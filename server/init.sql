@@ -106,7 +106,8 @@ CREATE TABLE IF NOT EXISTS user_progress (
   completed_plates JSONB NOT NULL DEFAULT '[]',
   current_row INTEGER DEFAULT 1,
   current_plate INTEGER DEFAULT 1,
-  last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, pattern_id)
 );
 
 -- PDF downloads
