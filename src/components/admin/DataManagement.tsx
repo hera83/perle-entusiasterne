@@ -73,12 +73,15 @@ export const DataManagement: React.FC = () => {
         return;
       }
 
-      // Import colors first (preserve original IDs)
+      // Delete existing colors so we can replace with source IDs
+      // (local seed colors have different UUIDs than the source system)
       if (importData.data.colors?.length) {
+        await db.from('bead_colors').delete().neq('id', '00000000-0000-0000-0000-000000000000');
         for (const color of importData.data.colors) {
-          await db
+          const { error } = await db
             .from('bead_colors')
             .upsert(color, { onConflict: 'id' });
+          if (error) console.error('Color import error:', error, color.code);
         }
       }
 
@@ -97,9 +100,7 @@ export const DataManagement: React.FC = () => {
           const { error } = await db
             .from('bead_patterns')
             .upsert(pattern, { onConflict: 'id' });
-          if (error) {
-            console.error('Pattern import error:', error, pattern.id);
-          }
+          if (error) console.error('Pattern import error:', error, pattern.id);
         }
       }
 
@@ -109,9 +110,7 @@ export const DataManagement: React.FC = () => {
           const { error } = await db
             .from('bead_plates')
             .upsert(plate, { onConflict: 'id' });
-          if (error) {
-            console.error('Plate import error:', error, plate.id);
-          }
+          if (error) console.error('Plate import error:', error, plate.id);
         }
       }
 
