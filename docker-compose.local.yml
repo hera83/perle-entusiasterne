@@ -9,7 +9,6 @@ name: perleplade-local
 
 services:
 
-  # ─── Frontend (Nginx) ────────────────────────────────────────
   app:
     build:
       context: .
@@ -19,16 +18,17 @@ services:
         - VITE_SUPABASE_PROJECT_ID=${VITE_SUPABASE_PROJECT_ID:-local}
         - VITE_BACKEND_MODE=local
         - VITE_LOCAL_API_URL=
+    restart: unless-stopped
     ports:
       - "${APP_PORT:-8080}:80"
     depends_on:
       backend:
         condition: service_started
 
-  # ─── Backend (Express/TypeScript) ────────────────────────────
   backend:
     build:
       context: ./server
+    restart: unless-stopped
     ports:
       - "${BACKEND_PORT:-3001}:3001"
     environment:
@@ -44,7 +44,6 @@ services:
       db:
         condition: service_healthy
 
-  # ─── Database (PostgreSQL) ──────────────────────────────────
   db:
     image: postgres:16-alpine
     restart: unless-stopped
