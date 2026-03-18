@@ -166,8 +166,9 @@ async function handleSelect(
   // Count query
   let totalCount: number | null = null;
   if (countMode === 'exact') {
-    const countSql = `SELECT COUNT(*) as cnt FROM ${table}${whereClause ? ` WHERE ${whereClause}` : ''}`;
-    const countResult = await pool.query(countSql, values);
+    const countWhere = joins.length > 0 ? buildWhere(filters, 1, table) : { whereClause, values };
+    const countSql = `SELECT COUNT(*) as cnt FROM ${table}${countWhere.whereClause ? ` WHERE ${countWhere.whereClause}` : ''}`;
+    const countResult = await pool.query(countSql, countWhere.values);
     totalCount = parseInt(countResult.rows[0].cnt);
   }
 
