@@ -41,7 +41,7 @@ export const Favorites: React.FC = () => {
 
     setLoading(true);
     try {
-      const { data: favorites, error: favError } = await supabase
+      const { data: favorites, error: favError } = await db
         .from('user_favorites')
         .select('pattern_id')
         .eq('user_id', user.id);
