@@ -449,7 +449,8 @@ function buildWhere(filters: any[], startIdx = 1, qualifyTable?: string): { wher
   return { whereClause: parts.join(' AND '), values };
 }
 
-function parseOrExpression(expr: string, startIdx: number): { clause: string; values: any[]; nextIdx: number } {
+function parseOrExpression(expr: string, startIdx: number, qualifyTable?: string): { clause: string; values: any[]; nextIdx: number } {
+  const q = (col: string) => qualifyTable ? `${qualifyTable}.${col}` : col;
   const conditions = expr.split(',');
   const parts: string[] = [];
   const values: any[] = [];
@@ -461,7 +462,7 @@ function parseOrExpression(expr: string, startIdx: number): { clause: string; va
       const [, col, op, rawVal] = match;
       const val = rawVal === 'true' ? true : rawVal === 'false' ? false : rawVal;
       const sqlOp = { eq: '=', neq: '!=', gt: '>', gte: '>=', lt: '<', lte: '<=', ilike: 'ILIKE' }[op] || '=';
-      parts.push(`${col} ${sqlOp} $${idx++}`);
+      parts.push(`${q(col)} ${sqlOp} $${idx++}`);
       values.push(val);
     }
   }
