@@ -73,18 +73,28 @@ const SharedPattern: React.FC = () => {
     setError(null);
 
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-      
-      const response = await fetch(
-        `${supabaseUrl}/functions/v1/get-shared-pattern?share_token=${shareToken}`,
-        {
-          headers: {
-            'apikey': anonKey,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      const isLocalMode = import.meta.env.VITE_BACKEND_MODE === 'local';
+      let response: Response;
+
+      if (isLocalMode) {
+        const apiUrl = import.meta.env.VITE_LOCAL_API_URL || 'http://localhost:3001';
+        response = await fetch(
+          `${apiUrl}/api/functions/get-shared-pattern?share_token=${shareToken}`,
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      } else {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+        response = await fetch(
+          `${supabaseUrl}/functions/v1/get-shared-pattern?share_token=${shareToken}`,
+          {
+            headers: {
+              'apikey': anonKey,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+      }
 
       if (!response.ok) {
         if (response.status === 404) {
