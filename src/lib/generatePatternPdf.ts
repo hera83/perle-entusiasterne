@@ -377,7 +377,7 @@ export async function generatePatternPdf(pattern: PatternData): Promise<void> {
 
   try {
     // 1. Fetch all plates
-    const { data: platesRaw, error: platesError } = await supabase
+    const { data: platesRaw, error: platesError } = await db
       .from('bead_plates')
       .select('beads, row_index, column_index')
       .eq('pattern_id', pattern.id)
@@ -395,7 +395,7 @@ export async function generatePatternPdf(pattern: PatternData): Promise<void> {
     }));
 
     // 2. Fetch all colors
-    const { data: colorData, error: colorError } = await supabase
+    const { data: colorData, error: colorError } = await db
       .from('bead_colors')
       .select('id, hex_color, name, code');
 
@@ -427,8 +427,8 @@ export async function generatePatternPdf(pattern: PatternData): Promise<void> {
     doc.save(`${pattern.title}.pdf`);
 
     // 5. Log download (fire-and-forget)
-    const { data: userData } = await supabase.auth.getUser();
-    supabase.from('pdf_downloads').insert({
+    const { data: userData } = await db.auth.getUser();
+    db.from('pdf_downloads').insert({
       pattern_id: pattern.id,
       user_id: userData?.user?.id || null,
     }).then(() => {});

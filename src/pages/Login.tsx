@@ -32,7 +32,7 @@ export const Login: React.FC = () => {
   useEffect(() => {
     const checkForUsers = async () => {
       try {
-        const { data, error } = await supabase.rpc('has_any_users');
+        const { data, error } = await db.rpc('has_any_users');
 
         if (!error && data === false) {
           setShowFirstAdmin(true);
@@ -98,11 +98,11 @@ export const Login: React.FC = () => {
       if (localFavorites.length === 0) return;
 
       // Use getSession() here - session should be stable 2s after login
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await db.auth.getSession();
       if (!session?.user) return;
 
       // Single bulk upsert instead of N individual requests
-      await supabase
+      await db
         .from('user_favorites')
         .upsert(
           localFavorites.map((patternId: string) => ({
@@ -139,7 +139,7 @@ export const Login: React.FC = () => {
     try {
       const redirectUrl = `${window.location.origin}/`;
 
-      const { data, error: signUpError } = await supabase.auth.signUp({
+      const { data, error: signUpError } = await db.auth.signUp({
         email,
         password,
         options: {
@@ -157,13 +157,13 @@ export const Login: React.FC = () => {
 
       if (data.user) {
         // Update display name in profile
-        await supabase
+        await db
           .from('profiles')
           .update({ display_name: displayName.trim() })
           .eq('user_id', data.user.id);
 
         // Assign admin role to first user
-        await supabase
+        await db
           .from('user_roles')
           .insert({
             user_id: data.user.id,

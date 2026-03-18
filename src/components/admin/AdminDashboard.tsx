@@ -42,7 +42,7 @@ export const AdminDashboard: React.FC = () => {
 
   const fetchStats = async () => {
     try {
-      const { data, error } = await supabase.rpc('get_admin_stats');
+      const { data, error } = await db.rpc('get_admin_stats');
 
       if (error) {
         console.error('Error fetching admin stats:', error);
@@ -70,7 +70,7 @@ export const AdminDashboard: React.FC = () => {
 
   const fetchTopDownloads = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('pdf_downloads')
         .select('pattern_id, bead_patterns(title)')
         .order('downloaded_at', { ascending: false });
@@ -106,7 +106,7 @@ export const AdminDashboard: React.FC = () => {
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('pdf_downloads')
         .select('pattern_id, bead_patterns(title)')
         .gte('downloaded_at', startOfMonth)

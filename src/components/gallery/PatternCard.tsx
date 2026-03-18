@@ -96,7 +96,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
 
   const checkFavorite = async () => {
     if (user) {
-      const { data } = await supabase
+      const { data } = await db
         .from('user_favorites')
         .select('id')
         .eq('user_id', user.id)
@@ -114,7 +114,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
     setTotalPlates(total);
 
     if (user) {
-      const { data } = await supabase
+      const { data } = await db
         .from('user_progress')
         .select('completed_plates')
         .eq('user_id', user.id)
@@ -148,13 +148,13 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
   const toggleFavorite = async () => {
     if (user) {
       if (isFavorite) {
-        await supabase
+        await db
           .from('user_favorites')
           .delete()
           .eq('user_id', user.id)
           .eq('pattern_id', pattern.id);
       } else {
-        await supabase
+        await db
           .from('user_favorites')
           .insert({ user_id: user.id, pattern_id: pattern.id });
       }
@@ -173,7 +173,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
 
   const handleReset = async () => {
     if (user) {
-      await supabase
+      await db
         .from('user_progress')
         .delete()
         .eq('user_id', user.id)
@@ -212,7 +212,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
     if (isCopyingLink) return;
     setIsCopyingLink(true);
     try {
-      const response = await supabase.functions.invoke('generate-share-token', {
+      const response = await db.functions.invoke('generate-share-token', {
         body: { pattern_id: pattern.id },
       });
 
@@ -234,7 +234,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
   };
 
   const handleDelete = async () => {
-    const { error } = await supabase
+    const { error } = await db
       .from('bead_patterns')
       .delete()
       .eq('id', pattern.id);
@@ -249,7 +249,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
 
   // Metadata dialog functions
   const fetchCategories = async () => {
-    const { data } = await supabase.from('categories').select('id, name').order('name');
+    const { data } = await db.from('categories').select('id, name').order('name');
     setCategories(data || []);
   };
 
@@ -266,7 +266,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
     let categoryId = editCategoryId;
 
     if (newCategoryName.trim()) {
-      const { data } = await supabase
+      const { data } = await db
         .from('categories')
         .insert({ name: newCategoryName.trim() })
         .select('id')
@@ -274,7 +274,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
       if (data) categoryId = data.id;
     }
 
-    const { error } = await supabase
+    const { error } = await db
       .from('bead_patterns')
       .update({ title: editTitle, category_id: categoryId })
       .eq('id', pattern.id);

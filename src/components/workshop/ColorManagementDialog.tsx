@@ -77,7 +77,7 @@ export const ColorManagementDialog: React.FC<ColorManagementDialogProps> = ({
 
   const fetchColors = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('bead_colors')
       .select('*')
       .order('code');
@@ -256,13 +256,13 @@ export const ColorManagementDialog: React.FC<ColorManagementDialogProps> = ({
 
       // Perform deletions
       for (const color of toDelete) {
-        const { error } = await supabase.from('bead_colors').delete().eq('id', color.id);
+        const { error } = await db.from('bead_colors').delete().eq('id', color.id);
         if (error) throw error;
       }
 
       // Perform updates
       for (const color of toUpdate) {
-        const { error } = await supabase
+        const { error } = await db
           .from('bead_colors')
           .update({
             code: color.code,
@@ -276,7 +276,7 @@ export const ColorManagementDialog: React.FC<ColorManagementDialogProps> = ({
 
       // Perform inserts
       for (const color of toInsert) {
-        const { error } = await supabase.from('bead_colors').insert({
+        const { error } = await db.from('bead_colors').insert({
           code: color.code,
           name: color.name,
           hex_color: color.hex_color,
