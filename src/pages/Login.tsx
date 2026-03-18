@@ -156,27 +156,13 @@ export const Login: React.FC = () => {
       }
 
       if (data.user) {
-        // Update display name in profile
-        await db
-          .from('profiles')
-          .update({ display_name: displayName.trim() })
-          .eq('user_id', data.user.id);
+        toast.success('Første administrator-konto oprettet! Du bliver logget ind...');
 
-        // Assign admin role to first user
-        await db
-          .from('user_roles')
-          .insert({
-            user_id: data.user.id,
-            role: 'admin',
-          });
-
-        toast.success('Administrator-konto oprettet! Du kan nu logge ind.');
-        
-        // Auto sign-in the user
         const { error: signInError } = await signIn(email, password);
         if (!signInError) {
           navigate('/');
         } else {
+          setError(signInError.message);
           setShowFirstAdmin(false);
         }
       }

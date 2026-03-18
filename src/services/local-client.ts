@@ -5,7 +5,7 @@
  * routing all calls to the local Express backend instead of Supabase.
  */
 
-const API_URL = import.meta.env.VITE_LOCAL_API_URL || 'http://localhost:3001';
+const API_URL = import.meta.env.VITE_LOCAL_API_URL || '';
 
 // ─── Auth Client ────────────────────────────────────────────────────────────
 
