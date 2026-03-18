@@ -4,7 +4,7 @@ import { SearchBar } from '@/components/gallery/SearchBar';
 import { PatternCard } from '@/components/gallery/PatternCard';
 import { PatternDialog } from '@/components/gallery/PatternDialog';
 import { CategoryFilter } from '@/components/gallery/CategoryFilter';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
