@@ -74,7 +74,7 @@ app.post('/api/auth/signin', async (req, res) => {
     // Update last sign in
     await pool.query('UPDATE auth_users SET last_sign_in_at = NOW(), updated_at = NOW() WHERE id = $1', [dbUser.id]);
 
-    const token = jwt.sign({ sub: dbUser.id, email: dbUser.email, role: 'authenticated' }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+    const token = jwt.sign({ sub: dbUser.id, email: dbUser.email, role: 'authenticated' }, JWT_SECRET, { expiresIn: JWT_EXPIRY as any });
     const metadata = dbUser.raw_user_meta_data || {};
     const user = { id: dbUser.id, email: dbUser.email, user_metadata: metadata };
     const session = { access_token: token, token_type: 'bearer', expires_in: 86400, user };
