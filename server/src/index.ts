@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import { pool } from './db';
 import { authMiddleware, requireAuth, type AuthRequest } from './middleware/auth';
 import { RELATIONSHIPS, PUBLIC_READ_TABLES, PUBLIC_INSERT_TABLES } from './schema';
-import { v4 as uuid } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const app = express();
 app.use(cors());
@@ -28,10 +28,10 @@ app.post('/api/auth/signup', async (req, res) => {
 
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
-    const userId = uuid();
+    const userId = randomUUID();
     const displayName = data?.display_name || email;
 
-    // Check if email exists
+    // Check if email exists (also check soft-deleted)
     const existing = await pool.query('SELECT id FROM auth_users WHERE email = $1', [email]);
     if (existing.rows.length > 0) {
       return res.status(400).json({ error: 'Email already registered' });
@@ -47,6 +47,15 @@ app.post('/api/auth/signup', async (req, res) => {
       'INSERT INTO profiles (user_id, display_name, email) VALUES ($1, $2, $3)',
       [userId, displayName, email]
     );
+
+    // Auto-assign admin role to the first user
+    const userCount = await pool.query('SELECT COUNT(*) as cnt FROM profiles');
+    if (parseInt(userCount.rows[0].cnt) === 1) {
+      await pool.query(
+        "INSERT INTO user_roles (user_id, role) VALUES ($1, 'admin') ON CONFLICT DO NOTHING",
+        [userId]
+      );
+    }
 
     const token = jwt.sign({ sub: userId, email, role: 'authenticated' }, JWT_SECRET, { expiresIn: JWT_EXPIRY as any });
     const user = { id: userId, email, user_metadata: { display_name: displayName } };
@@ -635,7 +644,7 @@ app.post('/api/functions/create-user', authMiddleware, requireAuth, async (req: 
     if (deleted.rows.length > 0) {
       // Reactivation
       const hashedPassword = await bcrypt.hash(password, 10);
-      const newUserId = uuid();
+      const newUserId = randomUUID();
       const oldUserId = deleted.rows[0].user_id;
 
       await pool.query(
@@ -662,7 +671,7 @@ app.post('/api/functions/create-user', authMiddleware, requireAuth, async (req: 
     if (existing.rows.length > 0) return res.status(400).json({ error: 'Denne email er allerede i brug' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUserId = uuid();
+    const newUserId = randomUUID();
 
     await pool.query(
       'INSERT INTO auth_users (id, email, encrypted_password, raw_user_meta_data, created_at, updated_at) VALUES ($1, $2, $3, $4, NOW(), NOW())',
@@ -700,7 +709,7 @@ app.post('/api/functions/generate-share-token', authMiddleware, requireAuth, asy
       return res.json({ share_token: pattern.rows[0].share_token });
     }
 
-    const newToken = uuid();
+    const newToken = randomUUID();
     await pool.query('UPDATE bead_patterns SET share_token = $1 WHERE id = $2', [newToken, pattern_id]);
     return res.json({ share_token: newToken });
   } catch (err: any) {
