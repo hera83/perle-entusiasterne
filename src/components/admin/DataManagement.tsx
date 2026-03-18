@@ -91,6 +91,30 @@ export const DataManagement: React.FC = () => {
         }
       }
 
+      // Import patterns
+      if (importData.data.patterns?.length) {
+        for (const pattern of importData.data.patterns) {
+          const { error } = await db
+            .from('bead_patterns')
+            .upsert(pattern, { onConflict: 'id' });
+          if (error) {
+            console.error('Pattern import error:', error, pattern.id);
+          }
+        }
+      }
+
+      // Import plates (after patterns, since they reference pattern_id)
+      if (importData.data.plates?.length) {
+        for (const plate of importData.data.plates) {
+          const { error } = await db
+            .from('bead_plates')
+            .upsert(plate, { onConflict: 'id' });
+          if (error) {
+            console.error('Plate import error:', error, plate.id);
+          }
+        }
+      }
+
       toast.success('Data importeret');
     } catch (err) {
       console.error('Import error:', err);
