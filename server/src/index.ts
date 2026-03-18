@@ -688,7 +688,7 @@ app.post('/api/functions/create-user', authMiddleware, requireAuth, async (req: 
   }
 });
 
-app.post('/api/functions/generate-share-token', authenticate, async (req, res) => {
+app.post('/api/functions/generate-share-token', authMiddleware, requireAuth, async (req: AuthRequest, res) => {
   const { pattern_id } = req.body;
   if (!pattern_id) return res.status(400).json({ error: 'pattern_id is required' });
 
