@@ -521,7 +521,7 @@ app.post('/api/rpc/:name', authMiddleware, async (req: AuthRequest, res) => {
 
 // ─── Edge Function Equivalents ──────────────────────────────────────────────
 
-app.post('/api/functions/admin-manage-user', authenticate, async (req, res) => {
+app.post('/api/functions/admin-manage-user', authMiddleware, requireAuth, async (req: AuthRequest, res) => {
   const userId = (req as any).userId;
 
   // Verify admin
