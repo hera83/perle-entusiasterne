@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import { pool } from './db';
 import { authMiddleware, requireAuth, type AuthRequest } from './middleware/auth';
 import { RELATIONSHIPS, PUBLIC_READ_TABLES, PUBLIC_INSERT_TABLES } from './schema';
-import { v4 as uuid } from 'uuid';
+import { randomUUID } from 'crypto';
 
 const app = express();
 app.use(cors());
