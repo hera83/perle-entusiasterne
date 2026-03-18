@@ -28,10 +28,10 @@ app.post('/api/auth/signup', async (req, res) => {
 
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
-    const userId = uuid();
+    const userId = randomUUID();
     const displayName = data?.display_name || email;
 
-    // Check if email exists
+    // Check if email exists (also check soft-deleted)
     const existing = await pool.query('SELECT id FROM auth_users WHERE email = $1', [email]);
     if (existing.rows.length > 0) {
       return res.status(400).json({ error: 'Email already registered' });
@@ -47,6 +47,15 @@ app.post('/api/auth/signup', async (req, res) => {
       'INSERT INTO profiles (user_id, display_name, email) VALUES ($1, $2, $3)',
       [userId, displayName, email]
     );
+
+    // Auto-assign admin role to the first user
+    const userCount = await pool.query('SELECT COUNT(*) as cnt FROM profiles');
+    if (parseInt(userCount.rows[0].cnt) === 1) {
+      await pool.query(
+        "INSERT INTO user_roles (user_id, role) VALUES ($1, 'admin') ON CONFLICT DO NOTHING",
+        [userId]
+      );
+    }
 
     const token = jwt.sign({ sub: userId, email, role: 'authenticated' }, JWT_SECRET, { expiresIn: JWT_EXPIRY as any });
     const user = { id: userId, email, user_metadata: { display_name: displayName } };
