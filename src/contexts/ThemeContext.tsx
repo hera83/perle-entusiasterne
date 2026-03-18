@@ -45,7 +45,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (user) {
       const loadUserTheme = async () => {
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from('profiles')
           .select('theme_preference')
           .eq('user_id', user.id)
