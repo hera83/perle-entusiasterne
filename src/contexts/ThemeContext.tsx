@@ -93,7 +93,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Save to database if logged in
     if (user) {
-      await supabase
+      await db
         .from('profiles')
         .update({ theme_preference: newTheme })
         .eq('user_id', user.id);
