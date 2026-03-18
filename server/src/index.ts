@@ -3,8 +3,8 @@ import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { pool } from './db';
-import { authenticate, optionalAuth } from './middleware/auth';
-import { SCHEMA } from './schema';
+import { authMiddleware, requireAuth, type AuthRequest } from './middleware/auth';
+import { RELATIONSHIPS, PUBLIC_READ_TABLES, PUBLIC_INSERT_TABLES } from './schema';
 import { v4 as uuid } from 'uuid';
 
 const app = express();
@@ -48,7 +48,7 @@ app.post('/api/auth/signup', async (req, res) => {
       [userId, displayName, email]
     );
 
-    const token = jwt.sign({ sub: userId, email, role: 'authenticated' }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+    const token = jwt.sign({ sub: userId, email, role: 'authenticated' }, JWT_SECRET, { expiresIn: JWT_EXPIRY as any });
     const user = { id: userId, email, user_metadata: { display_name: displayName } };
     const session = { access_token: token, token_type: 'bearer', expires_in: 86400, user };
 
@@ -74,7 +74,7 @@ app.post('/api/auth/signin', async (req, res) => {
     // Update last sign in
     await pool.query('UPDATE auth_users SET last_sign_in_at = NOW(), updated_at = NOW() WHERE id = $1', [dbUser.id]);
 
-    const token = jwt.sign({ sub: dbUser.id, email: dbUser.email, role: 'authenticated' }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+    const token = jwt.sign({ sub: dbUser.id, email: dbUser.email, role: 'authenticated' }, JWT_SECRET, { expiresIn: JWT_EXPIRY as any });
     const metadata = dbUser.raw_user_meta_data || {};
     const user = { id: dbUser.id, email: dbUser.email, user_metadata: metadata };
     const session = { access_token: token, token_type: 'bearer', expires_in: 86400, user };
@@ -88,7 +88,7 @@ app.post('/api/auth/signin', async (req, res) => {
 
 // ─── Generic Query Handler ──────────────────────────────────────────────────
 
-app.post('/api/query', optionalAuth, async (req, res) => {
+app.post('/api/query', authMiddleware, async (req: AuthRequest, res) => {
   const { table, operation, select, returnSelect, filters, order, range, body, upsertOptions, single, maybeSingle, count, head } = req.body;
   const userId = (req as any).userId;
 
@@ -200,7 +200,14 @@ function parseSelectWithJoins(table: string, selectCols?: string) {
       const relatedCols = joinMatch[2].split(',').map((c: string) => c.trim());
 
       // Look up the relationship in schema
-      const rel = SCHEMA[table]?.relations?.find((r: any) => r.table === relatedTable);
+      const tableRels = RELATIONSHIPS[table];
+      const forwardRel = tableRels?.forward?.[relatedTable];
+      const reverseRel = tableRels?.reverse?.[relatedTable];
+      const rel = forwardRel
+        ? { fromColumn: forwardRel.fkColumn, toColumn: forwardRel.pkColumn }
+        : reverseRel
+        ? { fromColumn: reverseRel.pkColumn, toColumn: reverseRel.fkColumn }
+        : null;
       if (rel) {
         joins.push({
           table: relatedTable,
@@ -455,7 +462,7 @@ function parseOrExpression(expr: string, startIdx: number): { clause: string; va
 
 // ─── RPC Endpoints ──────────────────────────────────────────────────────────
 
-app.post('/api/rpc/:name', optionalAuth, async (req, res) => {
+app.post('/api/rpc/:name', authMiddleware, async (req: AuthRequest, res) => {
   const { name } = req.params;
   const userId = (req as any).userId;
 
@@ -514,7 +521,7 @@ app.post('/api/rpc/:name', optionalAuth, async (req, res) => {
 
 // ─── Edge Function Equivalents ──────────────────────────────────────────────
 
-app.post('/api/functions/admin-manage-user', authenticate, async (req, res) => {
+app.post('/api/functions/admin-manage-user', authMiddleware, requireAuth, async (req: AuthRequest, res) => {
   const userId = (req as any).userId;
 
   // Verify admin
@@ -611,7 +618,7 @@ app.post('/api/functions/admin-manage-user', authenticate, async (req, res) => {
   }
 });
 
-app.post('/api/functions/create-user', authenticate, async (req, res) => {
+app.post('/api/functions/create-user', authMiddleware, requireAuth, async (req: AuthRequest, res) => {
   const callerId = (req as any).userId;
 
   // Verify admin
@@ -681,7 +688,7 @@ app.post('/api/functions/create-user', authenticate, async (req, res) => {
   }
 });
 
-app.post('/api/functions/generate-share-token', authenticate, async (req, res) => {
+app.post('/api/functions/generate-share-token', authMiddleware, requireAuth, async (req: AuthRequest, res) => {
   const { pattern_id } = req.body;
   if (!pattern_id) return res.status(400).json({ error: 'pattern_id is required' });
 
