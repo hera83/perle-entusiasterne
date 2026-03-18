@@ -200,7 +200,14 @@ function parseSelectWithJoins(table: string, selectCols?: string) {
       const relatedCols = joinMatch[2].split(',').map((c: string) => c.trim());
 
       // Look up the relationship in schema
-      const rel = SCHEMA[table]?.relations?.find((r: any) => r.table === relatedTable);
+      const tableRels = RELATIONSHIPS[table];
+      const forwardRel = tableRels?.forward?.[relatedTable];
+      const reverseRel = tableRels?.reverse?.[relatedTable];
+      const rel = forwardRel
+        ? { fromColumn: forwardRel.fkColumn, toColumn: forwardRel.pkColumn }
+        : reverseRel
+        ? { fromColumn: reverseRel.pkColumn, toColumn: reverseRel.fkColumn }
+        : null;
       if (rel) {
         joins.push({
           table: relatedTable,
