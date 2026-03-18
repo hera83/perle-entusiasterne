@@ -1,8 +1,12 @@
-// MUST be first import – patches storage before Supabase reads from it
-import '@/lib/patch-supabase-auth';
+// MUST be first import – patches storage before Supabase reads from it (hosted mode only)
+const isLocalMode = import.meta.env.VITE_BACKEND_MODE === 'local';
+if (!isLocalMode) {
+  await import('@/lib/patch-supabase-auth');
+}
+
 import React, { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/services/db';
 
 const REFRESH_INTERVAL_MS = 55 * 60 * 1000; // 55 minutes - safe for 60-minute tokens
 
@@ -39,7 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const checkAdminRole = async (userId: string): Promise<boolean> => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('user_roles')
         .select('role')
         .eq('user_id', userId)
@@ -59,15 +63,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const performRefresh = useCallback(async () => {
-    if (isRefreshingRef.current) return;
+    if (isRefreshingRef.current || isLocalMode) return;
     isRefreshingRef.current = true;
 
     try {
-      const { error } = await supabase.auth.refreshSession();
+      const { error } = await db.auth.refreshSession();
       if (error) {
         console.error('Session refresh failed:', error.message);
       }
-      // TOKEN_REFRESHED event handler takes care of the rest
     } catch (err) {
       console.error('Error refreshing session:', err);
     } finally {
@@ -75,8 +78,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // Clock-skew-resistant: uses FIXED relative interval, never absolute expires_at
   const scheduleRefresh = useCallback(() => {
+    if (isLocalMode) return; // Local mode uses long-lived tokens
+
     if (refreshTimerRef.current) {
       clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = null;
@@ -92,27 +96,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let isMounted = true;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+    const { data: { subscription } } = db.auth.onAuthStateChange(
+      (event: string, session: any) => {
         if (!isMounted) return;
 
-        // TOKEN_REFRESHED: update ref and reschedule, no re-render needed
         if (event === 'TOKEN_REFRESHED') {
           if (session) {
             sessionRef.current = session;
-            scheduleRefresh(); // Reset 55-min timer (never immediate)
+            scheduleRefresh();
           }
           return;
         }
 
-        // INITIAL_SESSION is handled by initializeAuth below
         if (event === 'INITIAL_SESSION') return;
-
-        // SIGNED_OUT: IGNORE completely
-        // We only clear user state via the explicit signOut() function.
-        if (event === 'SIGNED_OUT') {
-          return;
-        }
+        if (event === 'SIGNED_OUT') return;
 
         if (event === 'SIGNED_IN' && session?.user) {
           wasLoggedInRef.current = true;
@@ -125,7 +122,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               if (isMounted) setIsAdmin(result);
             });
           } else {
-            // Same user, just update session ref and reschedule
             sessionRef.current = session;
             scheduleRefresh();
           }
@@ -133,15 +129,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     );
 
-    // INITIAL load (controls loading state)
     const initializeAuth = async () => {
       try {
-        // FIRST get session (this awaits _initialize() internally)
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await db.auth.getSession();
 
-        // NOW _initialize() is done and auto-refresh has started.
-        // Stop it AFTER _initialize() so it actually works.
-        await supabase.auth.stopAutoRefresh();
+        if (!isLocalMode) {
+          await db.auth.stopAutoRefresh();
+        }
 
         if (!isMounted) return;
 
@@ -151,7 +145,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (session?.user) {
           wasLoggedInRef.current = true;
-          scheduleRefresh(); // Fixed 55-min timer
+          scheduleRefresh();
           const adminResult = await checkAdminRole(session.user.id);
           if (isMounted) setIsAdmin(adminResult);
         }
@@ -164,11 +158,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initializeAuth();
 
-    // Manual visibility handler (since we stopped Supabase's handler)
     const handleVisibilityChange = () => {
+      if (isLocalMode) return;
       if (document.visibilityState === 'visible' && sessionRef.current) {
         const elapsed = Date.now() - lastRefreshRef.current;
-        if (elapsed > 5 * 60 * 1000) { // More than 5 min since last refresh
+        if (elapsed > 5 * 60 * 1000) {
           performRefresh();
         }
       }
@@ -186,22 +180,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [scheduleRefresh, performRefresh]);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const { error, data } = await supabase.auth.signInWithPassword({
+    const { error, data } = await db.auth.signInWithPassword({
       email,
       password,
     });
 
     if (!error && data?.user) {
-      // Check if user is banned
-      const { data: profile } = await supabase
+      const { data: profile } = await db
         .from('profiles')
         .select('is_banned')
         .eq('user_id', data.user.id)
         .maybeSingle();
 
       if (profile?.is_banned) {
-        await supabase.auth.signOut();
-        // Clear state
+        await db.auth.signOut();
         currentUserIdRef.current = null;
         sessionRef.current = null;
         setUser(null);
@@ -214,13 +206,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signOut = useCallback(async () => {
-    // Clear refresh timer
     if (refreshTimerRef.current) {
       clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = null;
     }
 
-    // Clear ALL auth-related state DIRECTLY
     currentUserIdRef.current = null;
     sessionRef.current = null;
     wasLoggedInRef.current = false;
@@ -228,17 +218,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsAdmin(false);
 
     try {
-      await supabase.auth.signOut();
+      await db.auth.signOut();
     } catch (err) {
       console.error('Error during signOut:', err);
     }
   }, []);
 
   const verifySession = useCallback(async (): Promise<boolean> => {
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { session } } = await db.auth.getSession();
     if (session) return true;
 
-    // Session is truly gone - clear state
     currentUserIdRef.current = null;
     sessionRef.current = null;
     setUser(null);
