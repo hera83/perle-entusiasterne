@@ -1,43 +1,32 @@
 
 
-# Tydelig forskel mellem tomme og hvide perler
+User wants admins to also reassign pattern owner via the metadata edit dialog in PatternCard. Need to add a user/owner selector.
 
-## Problem
-Tomme pladefelter (ingen perle) og hvide perler ligner hinanden for meget i full preview, fordi tomme felter tegnes som lysegra cirkler (`#e6e6e6`) som ligner hvide perler (`#ffffff`).
+Plan:
 
-## Losning
-Tegn slet ikke en fyldt cirkel for tomme felter. I stedet vises kun en meget svag stiplet cirkelomrids, sa man kan se at der er en position, men det er tydeligt at den er tom. Hvide perler forbliver som solide hvide cirkler med kant.
+## Plan: Tilføj ejer-redigering for administratorer
 
-### Visuel forskel
-- **Hvid perle**: Solid hvid cirkel med tynd gra kant (som nu)
-- **Tom position**: Ingen fyldt cirkel, kun en meget svag stiplet cirkelomrids (`rgba(200, 200, 200, 0.3)`)
+Udvid metadata-dialogen i `PatternCard.tsx`, så administratorer udover titel og kategori også kan ændre ejeren (creator) af en opskrift. Dette løser problemet efter import mellem systemer, hvor bruger-IDs ikke matcher.
 
-## Teknisk aendring
+### Funktionalitet
+- Admin åbner "Ret metadata" på en opskrift (eksisterende knap, gear-ikon).
+- Et nyt felt "Ejer" vises **kun for admins** — almindelige ejere ser det ikke.
+- Feltet er en søgbar dropdown (Combobox) med alle brugere fra `profiles`, som viser `display_name` (eller email som fallback).
+- Den nuværende ejer er forvalgt.
+- Ved gem opdateres `bead_patterns.user_id` sammen med titel/kategori i samme kald.
 
-### Fil: `src/components/gallery/PatternFullPreview.tsx`
+### Tekniske ændringer
 
-AEndre tegnelogikken for tomme felter (ca. linje 115-120):
+**`src/components/gallery/PatternCard.tsx`**
+- Tilføj state: `editUserId`, `users` (liste af `{user_id, display_name, email}`), `userPickerOpen`.
+- I `handleOpenMetaDialog`: hvis `isAdmin`, hent brugere via `db.from('profiles').select('user_id, display_name, email').eq('is_deleted', false).order('display_name')`.
+- I `handleSaveMeta`: byg update-objekt dynamisk — inkluder `user_id: editUserId` kun hvis admin og værdien er ændret.
+- UI: Tilføj nyt afsnit i dialogen (kun synligt når `isAdmin`) med Label "Ejer" og en `Command`/`Popover`-baseret søgbar liste (genbrug shadcn `command.tsx` + `popover.tsx`), så admin nemt kan finde rette bruger blandt mange.
+- Efter gem trigges `onDelete?.()` (eksisterende reload-mekanisme), så listen genindlæses og det nye creator-navn vises.
 
-**Fra:**
-```typescript
-// Empty bead
-ctx.beginPath();
-ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-ctx.fillStyle = '#e6e6e6';
-ctx.fill();
-```
-
-**Til:**
-```typescript
-// Empty position - subtle dashed outline only
-ctx.beginPath();
-ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-ctx.strokeStyle = 'rgba(200, 200, 200, 0.3)';
-ctx.lineWidth = 0.5;
-ctx.setLineDash([2, 2]);
-ctx.stroke();
-ctx.setLineDash([]);
-```
-
-Dette giver en klar visuel forskel: hvide perler er solide cirkler, tomme positioner er naesten usynlige stiplede omrids.
+### Bemærkninger
+- Eksisterende RLS-policy på `bead_patterns` tillader allerede admins at opdatere alle felter inkl. `user_id`.
+- Ingen database-ændringer nødvendige.
+- Lokal backend (`server/src/index.ts`) bruger samme update-endpoint, så det virker i begge modes uden ændringer.
+- Privacy-reglen om kun fornavn på offentlige visninger påvirkes ikke — kun selve admin-dialogen viser fulde navne/emails.
 
