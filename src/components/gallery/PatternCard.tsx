@@ -278,11 +278,22 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
     setCategories(data || []);
   };
 
+  const fetchUsers = async () => {
+    const { data } = await db
+      .from('profiles')
+      .select('user_id, display_name, email')
+      .eq('is_deleted', false)
+      .order('display_name');
+    setUsers(data || []);
+  };
+
   const handleOpenMetaDialog = () => {
     setEditTitle(pattern.title);
     setEditCategoryId(pattern.category_id);
+    setEditUserId(pattern.user_id);
     setNewCategoryName('');
     fetchCategories();
+    if (isAdmin) fetchUsers();
     setMetaDialogOpen(true);
   };
 
@@ -299,9 +310,17 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
       if (data) categoryId = data.id;
     }
 
+    const updateData: Record<string, unknown> = {
+      title: editTitle,
+      category_id: categoryId,
+    };
+    if (isAdmin && editUserId && editUserId !== pattern.user_id) {
+      updateData.user_id = editUserId;
+    }
+
     const { error } = await db
       .from('bead_patterns')
-      .update({ title: editTitle, category_id: categoryId })
+      .update(updateData)
       .eq('id', pattern.id);
 
     if (error) {
