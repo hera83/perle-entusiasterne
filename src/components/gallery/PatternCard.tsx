@@ -310,7 +310,7 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
       if (data) categoryId = data.id;
     }
 
-    const updateData: Record<string, unknown> = {
+    const updateData: { title: string; category_id: string | null; user_id?: string } = {
       title: editTitle,
       category_id: categoryId,
     };
