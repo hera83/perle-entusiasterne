@@ -3,7 +3,10 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Heart, Eye, RotateCcw, Pencil, Trash2, Calendar, User, Grid3X3, Hash, Lock, Globe, FileDown, Loader2, Settings2, Link2, ZoomIn } from 'lucide-react';
+import { Heart, Eye, RotateCcw, Pencil, Trash2, Calendar, User, Grid3X3, Hash, Lock, Globe, FileDown, Loader2, Settings2, Link2, ZoomIn, Check, ChevronsUpDown } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { cn } from '@/lib/utils';
 import { generatePatternPdf } from '@/lib/generatePatternPdf';
 import { useAuth } from '@/contexts/AuthContext';
 import { db } from '@/services/db';
@@ -68,6 +71,12 @@ interface CategoryOption {
   name: string;
 }
 
+interface UserOption {
+  user_id: string;
+  display_name: string | null;
+  email: string | null;
+}
+
 export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDelete }) => {
   const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
@@ -85,6 +94,9 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
   const [newCategoryName, setNewCategoryName] = useState('');
   const [isSavingMeta, setIsSavingMeta] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [editUserId, setEditUserId] = useState<string>(pattern.user_id);
+  const [users, setUsers] = useState<UserOption[]>([]);
+  const [userPickerOpen, setUserPickerOpen] = useState(false);
 
   const canManage = isAdmin || (user && user.id === pattern.user_id);
   const canDelete = isAdmin;
@@ -266,11 +278,22 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
     setCategories(data || []);
   };
 
+  const fetchUsers = async () => {
+    const { data } = await db
+      .from('profiles')
+      .select('user_id, display_name, email')
+      .eq('is_deleted', false)
+      .order('display_name');
+    setUsers(data || []);
+  };
+
   const handleOpenMetaDialog = () => {
     setEditTitle(pattern.title);
     setEditCategoryId(pattern.category_id);
+    setEditUserId(pattern.user_id);
     setNewCategoryName('');
     fetchCategories();
+    if (isAdmin) fetchUsers();
     setMetaDialogOpen(true);
   };
 
@@ -287,9 +310,17 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
       if (data) categoryId = data.id;
     }
 
+    const updateData: { title: string; category_id: string | null; user_id?: string } = {
+      title: editTitle,
+      category_id: categoryId,
+    };
+    if (isAdmin && editUserId && editUserId !== pattern.user_id) {
+      updateData.user_id = editUserId;
+    }
+
     const { error } = await db
       .from('bead_patterns')
-      .update({ title: editTitle, category_id: categoryId })
+      .update(updateData)
       .eq('id', pattern.id);
 
     if (error) {
@@ -530,6 +561,55 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
                 }}
               />
             </div>
+            {isAdmin && (
+              <div className="space-y-2">
+                <Label>Ejer</Label>
+                <Popover open={userPickerOpen} onOpenChange={setUserPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      className="w-full justify-between font-normal"
+                    >
+                      {(() => {
+                        const u = users.find(x => x.user_id === editUserId);
+                        return u ? (u.display_name || u.email || u.user_id) : (editUserId === pattern.user_id ? (pattern.creator_name || 'Vælg ejer...') : 'Vælg ejer...');
+                      })()}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Søg bruger..." />
+                      <CommandList>
+                        <CommandEmpty>Ingen brugere fundet.</CommandEmpty>
+                        <CommandGroup>
+                          {users.map(u => {
+                            const label = u.display_name || u.email || u.user_id;
+                            return (
+                              <CommandItem
+                                key={u.user_id}
+                                value={`${u.display_name || ''} ${u.email || ''} ${u.user_id}`}
+                                onSelect={() => {
+                                  setEditUserId(u.user_id);
+                                  setUserPickerOpen(false);
+                                }}
+                              >
+                                <Check className={cn('mr-2 h-4 w-4', editUserId === u.user_id ? 'opacity-100' : 'opacity-0')} />
+                                <span className="truncate">{label}</span>
+                                {u.email && u.display_name && (
+                                  <span className="ml-2 text-xs text-muted-foreground truncate">{u.email}</span>
+                                )}
+                              </CommandItem>
+                            );
+                          })}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMetaDialogOpen(false)}>Annuller</Button>
