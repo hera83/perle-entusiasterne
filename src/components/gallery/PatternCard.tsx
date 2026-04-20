@@ -71,6 +71,12 @@ interface CategoryOption {
   name: string;
 }
 
+interface UserOption {
+  user_id: string;
+  display_name: string | null;
+  email: string | null;
+}
+
 export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDelete }) => {
   const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
