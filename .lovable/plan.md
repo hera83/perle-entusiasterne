@@ -1,32 +1,43 @@
 
+Screenshot bekræfter samme fejl: `POST /api/query 413 (Request Entity Too Large)` på lokal instans (perler.ramskov.pro). Billedet er 174×116 perler × 6×4 plader = ~20.184 celler — det er payload'en der er stor, ikke billedet.
 
-User wants admins to also reassign pattern owner via the metadata edit dialog in PatternCard. Need to add a user/owner selector.
+Den forrige fix hævede limits i `Dockerfile` (Nginx → 50m) og `server/src/index.ts` (Express → 50mb), men de er kun aktive efter `docker compose build`. Hvis 20k celler + thumbnail stadig overstiger 50 MB, eller hvis containeren ikke er rebuilt, fejler det stadig.
 
-Plan:
+Jeg foreslår en kombineret løsning: rebuild-instruktion + reelle payload-reduktioner så det virker robust uanset størrelse.
 
-## Plan: Tilføj ejer-redigering for administratorer
+## Plan: Reducér payload + sikr Docker-limits
 
-Udvid metadata-dialogen i `PatternCard.tsx`, så administratorer udover titel og kategori også kan ændre ejeren (creator) af en opskrift. Dette løser problemet efter import mellem systemer, hvor bruger-IDs ikke matcher.
+### 1. Komprimér thumbnail (`src/components/workshop/CreatePatternDialog.tsx` + `ImportImageDialog.tsx`)
+Thumbnail genereres som base64 PNG — for et 174×116 mønster kan det nemt blive 1-3 MB. Konvertér til JPEG kvalitet 0.7 før gem:
+```ts
+canvas.toDataURL('image/jpeg', 0.7)  // i stedet for toDataURL() (PNG default)
+```
+Reducerer typisk 5-10×.
 
-### Funktionalitet
-- Admin åbner "Ret metadata" på en opskrift (eksisterende knap, gear-ikon).
-- Et nyt felt "Ejer" vises **kun for admins** — almindelige ejere ser det ikke.
-- Feltet er en søgbar dropdown (Combobox) med alle brugere fra `profiles`, som viser `display_name` (eller email som fallback).
-- Den nuværende ejer er forvalgt.
-- Ved gem opdateres `bead_patterns.user_id` sammen med titel/kategori i samme kald.
+### 2. Batch-insert af bead_cells (`src/components/workshop/CreatePatternDialog.tsx` + `ImportImageDialog.tsx`)
+20.184 celler i én insert er hovedårsagen. Split i bidder af 1000:
+```ts
+for (let i = 0; i < cells.length; i += 1000) {
+  await db.from('bead_cells').insert(cells.slice(i, i + 1000));
+}
+```
+Ingen enkelt request bliver større end ~200 KB.
 
-### Tekniske ændringer
+### 3. Hæv server-side limit som sikkerhedsnet (`server/src/index.ts` + `Dockerfile`)
+Hæv fra 50mb → 100mb begge steder, så fremtidige store mønstre ikke fejler.
 
-**`src/components/gallery/PatternCard.tsx`**
-- Tilføj state: `editUserId`, `users` (liste af `{user_id, display_name, email}`), `userPickerOpen`.
-- I `handleOpenMetaDialog`: hvis `isAdmin`, hent brugere via `db.from('profiles').select('user_id, display_name, email').eq('is_deleted', false).order('display_name')`.
-- I `handleSaveMeta`: byg update-objekt dynamisk — inkluder `user_id: editUserId` kun hvis admin og værdien er ændret.
-- UI: Tilføj nyt afsnit i dialogen (kun synligt når `isAdmin`) med Label "Ejer" og en `Command`/`Popover`-baseret søgbar liste (genbrug shadcn `command.tsx` + `popover.tsx`), så admin nemt kan finde rette bruger blandt mange.
-- Efter gem trigges `onDelete?.()` (eksisterende reload-mekanisme), så listen genindlæses og det nye creator-navn vises.
+### 4. Tjek lokal backend understøtter array-insert
+Bekræft at `server/src/index.ts` `/api/query` håndterer `body` som array korrekt (det gør Supabase-klienten allerede).
 
-### Bemærkninger
-- Eksisterende RLS-policy på `bead_patterns` tillader allerede admins at opdatere alle felter inkl. `user_id`.
-- Ingen database-ændringer nødvendige.
-- Lokal backend (`server/src/index.ts`) bruger samme update-endpoint, så det virker i begge modes uden ændringer.
-- Privacy-reglen om kun fornavn på offentlige visninger påvirkes ikke — kun selve admin-dialogen viser fulde navne/emails.
+### Bruger-handling efter implementering
+Kør i dit lokale miljø:
+```
+docker compose -f docker-compose.local.yml --env-file .env.local up --build -d
+```
+så både frontend (med batch + JPEG-thumbnail) og backend (med højere limit) opdateres.
 
+### Filer der ændres
+- `src/components/workshop/ImportImageDialog.tsx` — JPEG-thumbnail + batch-insert af celler
+- `src/components/workshop/CreatePatternDialog.tsx` — samme optimeringer hvis relevant
+- `server/src/index.ts` — limit 100mb
+- `Dockerfile` — Nginx `client_max_body_size 100m`
