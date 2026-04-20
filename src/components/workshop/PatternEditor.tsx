@@ -439,7 +439,7 @@ export const PatternEditor: React.FC = () => {
         });
       });
 
-      return canvas.toDataURL('image/png', 0.8);
+      return canvas.toDataURL('image/jpeg', 0.7);
     } catch (err) {
       console.error('Error generating thumbnail:', err);
       return null;

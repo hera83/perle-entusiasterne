@@ -33,11 +33,11 @@ RUN printf 'server {\n\
     server_name localhost;\n\
     root /usr/share/nginx/html;\n\
     index index.html;\n\
-    client_max_body_size 50m;\n\
+    client_max_body_size 100m;\n\
 \n\
     location /api/ {\n\
         proxy_pass http://backend:3001;\n\
-        client_max_body_size 50m;\n\
+        client_max_body_size 100m;\n\
         proxy_request_buffering off;\n\
         proxy_http_version 1.1;\n\
         proxy_set_header Host $host;\n\
