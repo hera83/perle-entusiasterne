@@ -298,7 +298,7 @@ export function generateThumbnailFromBeads(
       }
     }
 
-    return canvas.toDataURL('image/png', 0.8);
+    return canvas.toDataURL('image/jpeg', 0.7);
   } catch {
     return null;
   }

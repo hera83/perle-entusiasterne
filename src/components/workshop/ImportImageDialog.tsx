@@ -462,11 +462,15 @@ export const ImportImageDialog: React.FC<ImportImageDialogProps> = ({
         }
       }
 
-      const { error: platesError } = await db
-        .from('bead_plates')
-        .insert(platesToInsert);
-
-      if (platesError) throw platesError;
+      // Batch-insert plates to avoid huge payloads (one plate at a time keeps each request small)
+      const PLATE_BATCH_SIZE = 1;
+      for (let i = 0; i < platesToInsert.length; i += PLATE_BATCH_SIZE) {
+        const batch = platesToInsert.slice(i, i + PLATE_BATCH_SIZE);
+        const { error: platesError } = await db
+          .from('bead_plates')
+          .insert(batch);
+        if (platesError) throw platesError;
+      }
 
       toast({
         title: 'Opskrift oprettet',

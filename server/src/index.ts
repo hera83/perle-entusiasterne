@@ -9,7 +9,7 @@ import { randomUUID } from 'crypto';
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '100mb' }));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'local-dev-secret-change-in-production';
 const JWT_EXPIRY = process.env.JWT_EXPIRY || '24h';
