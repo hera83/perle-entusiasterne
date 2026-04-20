@@ -561,6 +561,55 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
                 }}
               />
             </div>
+            {isAdmin && (
+              <div className="space-y-2">
+                <Label>Ejer</Label>
+                <Popover open={userPickerOpen} onOpenChange={setUserPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      className="w-full justify-between font-normal"
+                    >
+                      {(() => {
+                        const u = users.find(x => x.user_id === editUserId);
+                        return u ? (u.display_name || u.email || u.user_id) : (editUserId === pattern.user_id ? (pattern.creator_name || 'Vælg ejer...') : 'Vælg ejer...');
+                      })()}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Søg bruger..." />
+                      <CommandList>
+                        <CommandEmpty>Ingen brugere fundet.</CommandEmpty>
+                        <CommandGroup>
+                          {users.map(u => {
+                            const label = u.display_name || u.email || u.user_id;
+                            return (
+                              <CommandItem
+                                key={u.user_id}
+                                value={`${u.display_name || ''} ${u.email || ''} ${u.user_id}`}
+                                onSelect={() => {
+                                  setEditUserId(u.user_id);
+                                  setUserPickerOpen(false);
+                                }}
+                              >
+                                <Check className={cn('mr-2 h-4 w-4', editUserId === u.user_id ? 'opacity-100' : 'opacity-0')} />
+                                <span className="truncate">{label}</span>
+                                {u.email && u.display_name && (
+                                  <span className="ml-2 text-xs text-muted-foreground truncate">{u.email}</span>
+                                )}
+                              </CommandItem>
+                            );
+                          })}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMetaDialogOpen(false)}>Annuller</Button>
