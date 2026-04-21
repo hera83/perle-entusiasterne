@@ -1,43 +1,26 @@
 
-Screenshot bekræfter samme fejl: `POST /api/query 413 (Request Entity Too Large)` på lokal instans (perler.ramskov.pro). Billedet er 174×116 perler × 6×4 plader = ~20.184 celler — det er payload'en der er stor, ikke billedet.
+## Plan: Ret 401 ved "Kopier delingslink" i local mode
 
-Den forrige fix hævede limits i `Dockerfile` (Nginx → 50m) og `server/src/index.ts` (Express → 50mb), men de er kun aktive efter `docker compose build`. Hvis 20k celler + thumbnail stadig overstiger 50 MB, eller hvis containeren ikke er rebuilt, fejler det stadig.
+### Årsag
+Cloud-edge-funktionen `generate-share-token` kører med `verify_jwt = false` og bruger service role — alle kan kalde den med et `pattern_id`. Den lokale ækvivalent i `server/src/index.ts` bruger derimod `requireAuth`, så hvis JWT'en mangler eller er ugyldig (fx udløbet, eller `JWT_SECRET` blev ændret efter login), returneres 401. Det er derfor det fejler lokalt men virker i cloud.
 
-Jeg foreslår en kombineret løsning: rebuild-instruktion + reelle payload-reduktioner så det virker robust uanset størrelse.
+Sekundær mulig årsag: token i `localStorage` er gammel/ugyldig efter container-rebuild med nyt `JWT_SECRET`, og selvom Supabase-klienten viser brugeren som "logget ind", afviser backend tokenen.
 
-## Plan: Reducér payload + sikr Docker-limits
+### Løsning
+Match adfærden i cloud: tillad anonyme kald til `generate-share-token` lokalt — endpointet har kun brug for `pattern_id` for at lave et UUID og gemme det. Sikkerhedsmæssigt er det samme niveau som hosted/Supabase-versionen (delelink er en deling alligevel, og UUID'et er ikke gætbart).
 
-### 1. Komprimér thumbnail (`src/components/workshop/CreatePatternDialog.tsx` + `ImportImageDialog.tsx`)
-Thumbnail genereres som base64 PNG — for et 174×116 mønster kan det nemt blive 1-3 MB. Konvertér til JPEG kvalitet 0.7 før gem:
-```ts
-canvas.toDataURL('image/jpeg', 0.7)  // i stedet for toDataURL() (PNG default)
+### Ændringer
+
+**`server/src/index.ts` (linje 702)**
+- Fjern `requireAuth` fra `/api/functions/generate-share-token`-route. Behold `authMiddleware` (så `req.userId` er tilgængelig hvis brugeren er logget ind, til evt. fremtidig audit), men kræv ikke at den er sat.
+- Resultat: linjen bliver `app.post('/api/functions/generate-share-token', authMiddleware, async (req, res) => { ... })`.
+
+### Bruger-handling
+Efter ændringen skal kun backend-containeren rebuildes:
 ```
-Reducerer typisk 5-10×.
-
-### 2. Batch-insert af bead_cells (`src/components/workshop/CreatePatternDialog.tsx` + `ImportImageDialog.tsx`)
-20.184 celler i én insert er hovedårsagen. Split i bidder af 1000:
-```ts
-for (let i = 0; i < cells.length; i += 1000) {
-  await db.from('bead_cells').insert(cells.slice(i, i + 1000));
-}
+docker compose -f docker-compose.local.yml --env-file .env.local up --build -d backend
 ```
-Ingen enkelt request bliver større end ~200 KB.
-
-### 3. Hæv server-side limit som sikkerhedsnet (`server/src/index.ts` + `Dockerfile`)
-Hæv fra 50mb → 100mb begge steder, så fremtidige store mønstre ikke fejler.
-
-### 4. Tjek lokal backend understøtter array-insert
-Bekræft at `server/src/index.ts` `/api/query` håndterer `body` som array korrekt (det gør Supabase-klienten allerede).
-
-### Bruger-handling efter implementering
-Kør i dit lokale miljø:
-```
-docker compose -f docker-compose.local.yml --env-file .env.local up --build -d
-```
-så både frontend (med batch + JPEG-thumbnail) og backend (med højere limit) opdateres.
+Derefter virker "Kopier delingslink" anonymt — præcis som i cloud.
 
 ### Filer der ændres
-- `src/components/workshop/ImportImageDialog.tsx` — JPEG-thumbnail + batch-insert af celler
-- `src/components/workshop/CreatePatternDialog.tsx` — samme optimeringer hvis relevant
-- `server/src/index.ts` — limit 100mb
-- `Dockerfile` — Nginx `client_max_body_size 100m`
+- `server/src/index.ts` — fjern `requireAuth` fra share-token-routen.
