@@ -42,12 +42,15 @@ export const Gallery: React.FC = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [itemsPerPage, setItemsPerPage] = useState(() =>
+    typeof window !== 'undefined' ? getItemsPerPage(window.innerWidth) : 12
+  );
   const resultsRef = useRef<HTMLDivElement>(null);
 
-  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
+  const totalPages = Math.ceil(totalCount / itemsPerPage);
   const userId = user?.id;
 
-  const fetchPatterns = useCallback(async (query?: string, categoryId?: string | null, page: number = 1) => {
+  const fetchPatterns = useCallback(async (query?: string, categoryId?: string | null, page: number = 1, perPage: number = itemsPerPage) => {
     setLoading(true);
     try {
       let request = db
