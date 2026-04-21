@@ -9,7 +9,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-const ITEMS_PER_PAGE = 10;
+const getItemsPerPage = (width: number): number => {
+  if (width >= 1280) return 12; // xl: 4 cols × 3 rows
+  if (width >= 1024) return 9;  // lg: 3 cols × 3 rows
+  if (width >= 640) return 6;   // sm: 2 cols × 3 rows
+  return 3;                     // mobile: 1 col × 3 rows
+};
 
 interface Pattern {
   id: string;
