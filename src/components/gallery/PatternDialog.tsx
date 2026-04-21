@@ -223,6 +223,15 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
       setCompletedPlates(completedPlates);
     } else {
       toast.success(isCompleted ? 'Markering fjernet' : 'Plade markeret som færdig');
+
+      // Auto-navigate to next plate when marking as complete
+      if (!isCompleted) {
+        if (canGoNext) {
+          setTimeout(() => navigate('next'), 250);
+        } else {
+          setTimeout(() => toast.success('Tillykke, alle plader er færdige! 🎉'), 300);
+        }
+      }
     }
   };
 

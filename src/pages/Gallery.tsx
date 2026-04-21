@@ -9,7 +9,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-const ITEMS_PER_PAGE = 10;
+const getItemsPerPage = (width: number): number => {
+  if (width >= 1280) return 12; // xl: 4 cols × 3 rows
+  if (width >= 1024) return 9;  // lg: 3 cols × 3 rows
+  if (width >= 640) return 6;   // sm: 2 cols × 3 rows
+  return 3;                     // mobile: 1 col × 3 rows
+};
 
 interface Pattern {
   id: string;
@@ -37,12 +42,15 @@ export const Gallery: React.FC = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [itemsPerPage, setItemsPerPage] = useState(() =>
+    typeof window !== 'undefined' ? getItemsPerPage(window.innerWidth) : 12
+  );
   const resultsRef = useRef<HTMLDivElement>(null);
 
-  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
+  const totalPages = Math.ceil(totalCount / itemsPerPage);
   const userId = user?.id;
 
-  const fetchPatterns = useCallback(async (query?: string, categoryId?: string | null, page: number = 1) => {
+  const fetchPatterns = useCallback(async (query?: string, categoryId?: string | null, page: number = 1, perPage: number = itemsPerPage) => {
     setLoading(true);
     try {
       let request = db
@@ -80,8 +88,8 @@ export const Gallery: React.FC = () => {
         request = request.eq('category_id', categoryId);
       }
 
-      const from = (page - 1) * ITEMS_PER_PAGE;
-      const to = from + ITEMS_PER_PAGE - 1;
+      const from = (page - 1) * perPage;
+      const to = from + perPage - 1;
 
       const { data, error, count } = await request.range(from, to);
 
@@ -114,10 +122,27 @@ export const Gallery: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [userId, isAdmin]);
+  }, [userId, isAdmin, itemsPerPage]);
+
+  // Listen for viewport resize and update items per page accordingly
+  useEffect(() => {
+    const handleResize = () => {
+      const next = getItemsPerPage(window.innerWidth);
+      setItemsPerPage((prev) => {
+        if (prev !== next) {
+          setCurrentPage(1);
+        }
+        return next;
+      });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
-    fetchPatterns('', null, 1);
+    fetchPatterns(searchQuery, selectedCategory, 1, itemsPerPage);
+    setCurrentPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchPatterns]);
 
   const handleSearch = (query: string) => {
