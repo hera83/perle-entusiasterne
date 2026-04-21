@@ -247,7 +247,7 @@ export const Gallery: React.FC = () => {
               {/* Pagination */}
               {totalPages > 1 && (
                 <div className="mt-8 flex flex-col items-center gap-3">
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center justify-center flex-wrap gap-1 max-w-full">
                     <Button
                       variant="outline"
                       size="sm"
@@ -256,7 +256,7 @@ export const Gallery: React.FC = () => {
                       className="gap-1"
                     >
                       <ChevronLeft className="h-4 w-4" />
-                      Forrige
+                      <span className="hidden sm:inline">Forrige</span>
                     </Button>
 
                     {renderPageNumbers().map((page, idx) =>
@@ -282,7 +282,7 @@ export const Gallery: React.FC = () => {
                       disabled={currentPage === totalPages}
                       className="gap-1"
                     >
-                      Næste
+                      <span className="hidden sm:inline">Næste</span>
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>
