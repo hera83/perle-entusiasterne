@@ -88,8 +88,8 @@ export const Gallery: React.FC = () => {
         request = request.eq('category_id', categoryId);
       }
 
-      const from = (page - 1) * ITEMS_PER_PAGE;
-      const to = from + ITEMS_PER_PAGE - 1;
+      const from = (page - 1) * perPage;
+      const to = from + perPage - 1;
 
       const { data, error, count } = await request.range(from, to);
 
