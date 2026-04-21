@@ -8,6 +8,7 @@ import { db } from '@/services/db';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const getItemsPerPage = (width: number): number => {
   if (width >= 1280) return 12; // xl: 4 cols × 3 rows
@@ -34,6 +35,7 @@ interface Pattern {
 
 export const Gallery: React.FC = () => {
   const { user, isAdmin } = useAuth();
+  const isMobile = useIsMobile();
   const [patterns, setPatterns] = useState<Pattern[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -174,17 +176,19 @@ export const Gallery: React.FC = () => {
 
   const renderPageNumbers = () => {
     const pages: (number | 'ellipsis')[] = [];
-    if (totalPages <= 7) {
+    const maxSimple = isMobile ? 5 : 7;
+    if (totalPages <= maxSimple) {
       for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      pages.push(1);
-      if (currentPage > 3) pages.push('ellipsis');
-      for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
-        pages.push(i);
-      }
-      if (currentPage < totalPages - 2) pages.push('ellipsis');
-      pages.push(totalPages);
+      return pages;
     }
+    const window = isMobile ? 0 : 1;
+    pages.push(1);
+    if (currentPage > 2 + window) pages.push('ellipsis');
+    for (let i = Math.max(2, currentPage - window); i <= Math.min(totalPages - 1, currentPage + window); i++) {
+      pages.push(i);
+    }
+    if (currentPage < totalPages - 1 - window) pages.push('ellipsis');
+    pages.push(totalPages);
     return pages;
   };
 
@@ -243,7 +247,7 @@ export const Gallery: React.FC = () => {
               {/* Pagination */}
               {totalPages > 1 && (
                 <div className="mt-8 flex flex-col items-center gap-3">
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center justify-center flex-wrap gap-1 max-w-full">
                     <Button
                       variant="outline"
                       size="sm"
@@ -252,7 +256,7 @@ export const Gallery: React.FC = () => {
                       className="gap-1"
                     >
                       <ChevronLeft className="h-4 w-4" />
-                      Forrige
+                      <span className="hidden sm:inline">Forrige</span>
                     </Button>
 
                     {renderPageNumbers().map((page, idx) =>
@@ -278,7 +282,7 @@ export const Gallery: React.FC = () => {
                       disabled={currentPage === totalPages}
                       className="gap-1"
                     >
-                      Næste
+                      <span className="hidden sm:inline">Næste</span>
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>
