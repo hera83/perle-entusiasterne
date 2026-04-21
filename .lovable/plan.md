@@ -1,26 +1,43 @@
 
-## Plan: Ret 401 ved "Kopier delingslink" i local mode
+## Plan: Galleri-paginering pr. række + auto-næste ved markering
 
-### Årsag
-Cloud-edge-funktionen `generate-share-token` kører med `verify_jwt = false` og bruger service role — alle kan kalde den med et `pattern_id`. Den lokale ækvivalent i `server/src/index.ts` bruger derimod `requireAuth`, så hvis JWT'en mangler eller er ugyldig (fx udløbet, eller `JWT_SECRET` blev ændret efter login), returneres 401. Det er derfor det fejler lokalt men virker i cloud.
+### a) Dynamisk sidestørrelse (3 rækker pr. side)
 
-Sekundær mulig årsag: token i `localStorage` er gammel/ugyldig efter container-rebuild med nyt `JWT_SECRET`, og selvom Supabase-klienten viser brugeren som "logget ind", afviser backend tokenen.
+Galleriet bruger faste breakpoints: `sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4` (1 / 2 / 3 / 4 kolonner). I dag er sidestørrelsen hardcodet til 10. Vi gør den responsiv så den altid svarer til **3 fyldte rækker**:
 
-### Løsning
-Match adfærden i cloud: tillad anonyme kald til `generate-share-token` lokalt — endpointet har kun brug for `pattern_id` for at lave et UUID og gemme det. Sikkerhedsmæssigt er det samme niveau som hosted/Supabase-versionen (delelink er en deling alligevel, og UUID'et er ikke gætbart).
+- Mobil (1 kol): 3 cards
+- `sm` (2 kol): 6 cards
+- `lg` (3 kol): 9 cards
+- `xl` (4 kol): 12 cards
 
-### Ændringer
+**Implementering i `src/pages/Gallery.tsx`:**
+- Erstat `const ITEMS_PER_PAGE = 10` med en `useState`-værdi der opdateres via en lille hook der lytter på `window.innerWidth` og matcher Tailwind-breakpoints (`sm` ≥ 640, `lg` ≥ 1024, `xl` ≥ 1280).
+- Når sidestørrelsen ændres (fx bruger ændrer vinduesstørrelse), nulstil til side 1 og refetch.
+- `totalPages` regnes ud fra dynamisk værdi.
+- Send den dynamiske værdi med ind i `range(from, to)`-kaldet.
 
-**`server/src/index.ts` (linje 702)**
-- Fjern `requireAuth` fra `/api/functions/generate-share-token`-route. Behold `authMiddleware` (så `req.userId` er tilgængelig hvis brugeren er logget ind, til evt. fremtidig audit), men kræv ikke at den er sat.
-- Resultat: linjen bliver `app.post('/api/functions/generate-share-token', authMiddleware, async (req, res) => { ... })`.
+Dermed bliver sidste række altid fyldt op (medmindre der reelt er færre opskrifter tilbage), og pagineringen fungerer stadig som i dag.
 
-### Bruger-handling
-Efter ændringen skal kun backend-containeren rebuildes:
-```
-docker compose -f docker-compose.local.yml --env-file .env.local up --build -d backend
-```
-Derefter virker "Kopier delingslink" anonymt — præcis som i cloud.
+### b) Auto-naviger til næste plade når man markerer som færdig
+
+I `src/components/gallery/PatternDialog.tsx` håndterer `togglePlateComplete` kun selve check-state. Vi udvider den så **når brugeren markerer pladen som færdig** (ikke når den fjernes igen), navigeres der automatisk til næste plade — hvis der findes en.
+
+**Logik i `togglePlateComplete`:**
+1. Beregn `newCompleted` som nu.
+2. Gem progress.
+3. Hvis pladen netop blev markeret færdig (`!isCompleted`) **og** `canGoNext`:
+   - Vent kort (≈250 ms via `setTimeout`) så brugeren ser checken bliver sat og toast vises.
+   - Kald `navigate('next')`.
+4. Hvis det var sidste plade i mønstret: vis i stedet en lille "Tillykke, alle plader færdige!"-toast og bliv på pladen.
+5. Ved af-markering: behold nuværende adfærd (ingen navigation).
+
+Sikrer god UX: man kan tjekke af og fortsætte uden at skulle trykke "Frem" manuelt.
 
 ### Filer der ændres
-- `server/src/index.ts` — fjern `requireAuth` fra share-token-routen.
+- `src/pages/Gallery.tsx` — dynamisk `itemsPerPage` baseret på viewport-bredde + resize-handler.
+- `src/components/gallery/PatternDialog.tsx` — auto-navigation efter `togglePlateComplete` når plade markeres færdig.
+
+### Bemærkninger
+- Ingen database- eller backend-ændringer.
+- Virker både i cloud og local mode.
+- Eksisterende paginering, søgning og kategorifilter er uændret.
