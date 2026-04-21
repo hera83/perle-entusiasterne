@@ -8,6 +8,7 @@ import { db } from '@/services/db';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const getItemsPerPage = (width: number): number => {
   if (width >= 1280) return 12; // xl: 4 cols × 3 rows
