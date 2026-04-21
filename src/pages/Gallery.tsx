@@ -122,10 +122,27 @@ export const Gallery: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [userId, isAdmin]);
+  }, [userId, isAdmin, itemsPerPage]);
+
+  // Listen for viewport resize and update items per page accordingly
+  useEffect(() => {
+    const handleResize = () => {
+      const next = getItemsPerPage(window.innerWidth);
+      setItemsPerPage((prev) => {
+        if (prev !== next) {
+          setCurrentPage(1);
+        }
+        return next;
+      });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
-    fetchPatterns('', null, 1);
+    fetchPatterns(searchQuery, selectedCategory, 1, itemsPerPage);
+    setCurrentPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchPatterns]);
 
   const handleSearch = (query: string) => {
