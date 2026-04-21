@@ -35,6 +35,7 @@ interface Pattern {
 
 export const Gallery: React.FC = () => {
   const { user, isAdmin } = useAuth();
+  const isMobile = useIsMobile();
   const [patterns, setPatterns] = useState<Pattern[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
