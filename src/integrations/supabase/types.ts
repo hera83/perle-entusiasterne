@@ -354,7 +354,35 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_list_profiles: {
+        Args: never
+        Returns: {
+          created_at: string
+          display_name: string | null
+          email: string | null
+          id: string
+          is_banned: boolean
+          is_deleted: boolean
+          theme_preference: string | null
+          updated_at: string
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "profiles"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       get_admin_stats: { Args: never; Returns: Json }
+      get_my_account_status: {
+        Args: never
+        Returns: {
+          email: string
+          is_banned: boolean
+          is_deleted: boolean
+        }[]
+      }
       get_pattern_owner: { Args: { _pattern_id: string }; Returns: string }
       has_any_users: { Args: never; Returns: boolean }
       has_role: {
