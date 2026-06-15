@@ -521,6 +521,18 @@ app.post('/api/rpc/:name', authMiddleware, async (req: AuthRequest, res) => {
         const result = await pool.query('SELECT user_id FROM bead_patterns WHERE id = $1', [_pattern_id]);
         return res.json({ result: result.rows[0]?.user_id || null });
       }
+      case 'get_my_account_status': {
+        if (!userId) return res.status(401).json({ error: 'Not authorized' });
+        const r = await pool.query('SELECT is_banned, is_deleted, email FROM profiles WHERE user_id = $1', [userId]);
+        return res.json({ result: r.rows[0] ? [r.rows[0]] : [] });
+      }
+      case 'admin_list_profiles': {
+        if (!userId) return res.status(401).json({ error: 'Not authorized' });
+        const isAdmin = await pool.query("SELECT EXISTS (SELECT 1 FROM user_roles WHERE user_id = $1 AND role = 'admin') as is_admin", [userId]);
+        if (!isAdmin.rows[0].is_admin) return res.status(403).json({ error: 'Not authorized' });
+        const r = await pool.query('SELECT * FROM profiles ORDER BY created_at DESC');
+        return res.json({ result: r.rows });
+      }
       default:
         return res.status(404).json({ error: `Unknown RPC function: ${name}` });
     }

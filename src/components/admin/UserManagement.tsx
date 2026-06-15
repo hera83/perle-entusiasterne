@@ -86,16 +86,16 @@ export const UserManagement: React.FC = () => {
 
   const fetchUsers = async () => {
     try {
-      const { data: profiles, error } = await db
-        .from('profiles')
-        .select('id, user_id, display_name, created_at, is_banned')
-        .eq('is_deleted', false)
-        .order('created_at', { ascending: false });
+      const { data: allProfiles, error } = await db.rpc('admin_list_profiles');
 
       if (error) {
         console.error('Error fetching profiles:', error);
         return;
       }
+
+      const profiles = ((allProfiles as any[]) || [])
+        .filter((p) => !p.is_deleted)
+        .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
 
       // Fetch roles
       const userIds = (profiles || []).map(p => p.user_id);
