@@ -279,12 +279,11 @@ export const PatternCard: React.FC<PatternCardProps> = ({ pattern, onOpen, onDel
   };
 
   const fetchUsers = async () => {
-    const { data } = await db
-      .from('profiles')
-      .select('user_id, display_name, email')
-      .eq('is_deleted', false)
-      .order('display_name');
-    setUsers(data || []);
+    const { data } = await db.rpc('admin_list_profiles');
+    const rows = ((data as any[]) || [])
+      .filter((p) => !p.is_deleted)
+      .sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+    setUsers(rows);
   };
 
   const handleOpenMetaDialog = () => {
