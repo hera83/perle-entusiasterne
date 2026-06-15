@@ -188,13 +188,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     if (!error && data?.user) {
-      const { data: profile } = await db
-        .from('profiles')
-        .select('is_banned')
-        .eq('user_id', data.user.id)
-        .maybeSingle();
+      const { data: status } = await db.rpc('get_my_account_status');
+      const row = Array.isArray(status) ? status[0] : status;
 
-      if (profile?.is_banned) {
+      if (row?.is_banned) {
         await db.auth.signOut();
         currentUserIdRef.current = null;
         sessionRef.current = null;
