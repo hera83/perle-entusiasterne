@@ -316,11 +316,11 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto md:overflow-hidden p-3 sm:p-4 flex flex-col md:grid md:grid-cols-[1fr_250px] gap-3 sm:gap-4 min-h-0">
+        <div className="flex-1 overflow-y-auto md:overflow-hidden p-2 sm:p-3 md:p-4 flex flex-col md:grid md:grid-cols-[minmax(0,1fr)_250px] gap-3 sm:gap-4 min-h-0">
           {/* Bead Plate */}
           <div
             ref={beadContainerRef}
-            className="overflow-auto flex items-start justify-center min-h-0 h-[60vh] md:h-auto"
+            className="overflow-auto flex items-start justify-center min-h-[260px] h-[58vh] md:h-full md:min-h-0"
           >
             <BeadPlateView
               beads={plateData || []}
