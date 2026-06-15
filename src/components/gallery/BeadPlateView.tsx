@@ -46,11 +46,16 @@ export const BeadPlateView: React.FC<BeadPlateViewProps> = ({ beads, colors, dim
   });
 
   // Auto-fit bead size to available container space.
-  // We need (dimension + 1) cells in each direction (extra cell = row/column labels).
+  // We render (dimension + 1) cells in each direction (extra cell = row/column labels).
+  // Subtract a small buffer to account for scrollbars, borders and sub-pixel rounding.
+  const SAFETY_BUFFER = 16;
   const beadSize = containerSize
     ? Math.max(
-        10,
-        Math.floor(Math.min(containerSize.width, containerSize.height) / (dimension + 1))
+        8,
+        Math.floor(
+          (Math.min(containerSize.width, containerSize.height) - SAFETY_BUFFER) /
+            (dimension + 1)
+        )
       )
     : Math.max(14, Math.min(32, Math.floor(600 / dimension)));
 
