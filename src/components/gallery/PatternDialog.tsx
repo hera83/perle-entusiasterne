@@ -316,9 +316,12 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-hidden p-4 grid grid-cols-1 md:grid-cols-[1fr_250px] gap-4 min-h-0">
+        <div className="flex-1 overflow-y-auto md:overflow-hidden p-3 sm:p-4 flex flex-col md:grid md:grid-cols-[1fr_250px] gap-3 sm:gap-4 min-h-0">
           {/* Bead Plate */}
-          <div ref={beadContainerRef} className="overflow-auto flex items-center justify-center min-h-0">
+          <div
+            ref={beadContainerRef}
+            className="overflow-auto flex items-center justify-center min-h-0 h-[60vh] md:h-auto"
+          >
             <BeadPlateView
               beads={plateData || []}
               colors={colors}
@@ -328,17 +331,17 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-4 no-print">
-            <div className="p-4 bg-muted rounded-lg">
-              <h3 className="font-semibold mb-3">Status</h3>
-              <div className="space-y-2 text-sm">
+          <div className="space-y-3 sm:space-y-4 no-print md:overflow-y-auto">
+            <div className="p-3 sm:p-4 bg-muted rounded-lg">
+              <h3 className="font-semibold mb-2 sm:mb-3">Status</h3>
+              <div className="space-y-1 sm:space-y-2 text-sm">
                 <p>Række: {currentPosition.row} af {pattern.plate_height}</p>
                 <p>Plade: {currentPosition.plate} af {pattern.plate_width}</p>
                 <p>Færdige plader: {completedPlates.length} af {totalPlates}</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 p-4 bg-muted rounded-lg">
+            <div className="flex items-center gap-3 p-3 sm:p-4 bg-muted rounded-lg">
               <Checkbox
                 id="plate-complete"
                 checked={completedPlates.includes(currentPlateKey)}
