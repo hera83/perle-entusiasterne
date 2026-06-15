@@ -54,18 +54,23 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
   const totalPlates = pattern ? pattern.plate_width * pattern.plate_height : 0;
   const currentPlateKey = `${currentPosition.row}-${currentPosition.plate}`;
 
-  // Measure bead container with ResizeObserver
+  // Measure the visible bead viewport with ResizeObserver.
   useEffect(() => {
     const el = beadContainerRef.current;
     if (!el || !open) return;
 
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        if (width > 0 && height > 0) {
-          setContainerSize({ width, height });
-        }
+    const measure = () => {
+      const width = el.clientWidth;
+      const height = el.clientHeight;
+      if (width > 0 && height > 0) {
+        setContainerSize({ width, height });
       }
+    };
+
+    measure();
+
+    const observer = new ResizeObserver(() => {
+      requestAnimationFrame(measure);
     });
 
     observer.observe(el);
@@ -316,11 +321,11 @@ export const PatternDialog: React.FC<PatternDialogProps> = ({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto md:overflow-hidden p-3 sm:p-4 flex flex-col md:grid md:grid-cols-[1fr_250px] gap-3 sm:gap-4 min-h-0">
+        <div className="flex-1 overflow-y-auto md:overflow-hidden p-2 sm:p-3 md:p-4 flex flex-col md:grid md:grid-cols-[minmax(0,1fr)_250px] gap-3 sm:gap-4 min-h-0">
           {/* Bead Plate */}
           <div
             ref={beadContainerRef}
-            className="overflow-auto flex items-start justify-center min-h-0 h-[60vh] md:h-auto"
+            className="overflow-auto flex items-start justify-center min-w-0 max-w-full min-h-[260px] h-[58vh] md:h-full md:min-h-0"
           >
             <BeadPlateView
               beads={plateData || []}

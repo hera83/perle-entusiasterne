@@ -45,30 +45,34 @@ export const BeadPlateView: React.FC<BeadPlateViewProps> = ({ beads, colors, dim
     }
   });
 
-  // Auto-fit bead size to available container space.
-  // We render (dimension + 1) cells in each direction (extra cell = row/column labels).
-  // Subtract a small buffer to account for scrollbars, borders and sub-pixel rounding.
-  const SAFETY_BUFFER = 16;
+  // Auto-fit bead size to the actual visible viewport of the plate container.
+  // Height is the fragile axis here: the column header has its own line height,
+  // so calculate width and height separately and keep a generous buffer.
+  const HEADER_HEIGHT = 16;
+  const SAFETY_BUFFER = 44;
   const beadSize = containerSize
     ? Math.max(
-        8,
+        6,
         Math.floor(
-          (Math.min(containerSize.width, containerSize.height) - SAFETY_BUFFER) /
-            (dimension + 1)
+          Math.min(
+            (containerSize.width - SAFETY_BUFFER) / (dimension + 1),
+            (containerSize.height - HEADER_HEIGHT - SAFETY_BUFFER) / dimension
+          )
         )
       )
-    : Math.max(14, Math.min(32, Math.floor(600 / dimension)));
+    : Math.max(12, Math.min(28, Math.floor(560 / dimension)));
+  const fontSize = beadSize >= 18 ? 12 : beadSize >= 14 ? 10 : 8;
 
   return (
-    <div className="inline-block">
+    <div className="inline-block flex-shrink-0">
       {/* Column numbers */}
-      <div className="flex">
+      <div className="flex h-4">
         <div style={{ width: beadSize }} className="flex-shrink-0" />
         {Array.from({ length: dimension }, (_, i) => (
           <div
             key={`col-${i}`}
             style={{ width: beadSize }}
-            className="text-center text-xs text-muted-foreground"
+            className="flex-shrink-0 text-center text-[10px] leading-4 text-muted-foreground"
           >
             {i + 1}
           </div>
@@ -81,7 +85,7 @@ export const BeadPlateView: React.FC<BeadPlateViewProps> = ({ beads, colors, dim
           {/* Row number */}
           <div
             style={{ width: beadSize, height: beadSize }}
-            className="flex items-center justify-center text-xs text-muted-foreground flex-shrink-0"
+            className="flex items-center justify-center text-[10px] leading-none text-muted-foreground flex-shrink-0"
           >
             {rowIndex + 1}
           </div>
@@ -102,9 +106,10 @@ export const BeadPlateView: React.FC<BeadPlateViewProps> = ({ beads, colors, dim
                       height: beadSize,
                       backgroundColor: bgColor,
                       color: textColor,
+                      fontSize,
                     }}
                     className={`
-                      flex items-center justify-center text-xs font-medium
+                      flex flex-shrink-0 items-center justify-center font-medium leading-none
                       rounded-full bead-shadow cursor-default
                       border border-[hsl(var(--bead-grid))]
                       ${!colorInfo ? 'bg-muted' : ''}
